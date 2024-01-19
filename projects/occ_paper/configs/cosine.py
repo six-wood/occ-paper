@@ -9,12 +9,12 @@ from torch.optim.adamw import AdamW
 lr = 2e-4  # max learning rate
 optim_wrapper = dict(
     type=OptimWrapper,
-    optimizer=dict(type=AdamW, lr=lr, weight_decay=0.01, betas=(0.95, 0.99)),
+    optimizer=dict(type=AdamW, lr=lr, weight_decay=0.01),
     clip_grad=dict(max_norm=35, norm_type=2),
 )
 
 param_scheduler = [
-    dict(type=LinearLR, start_factor=1.0 / 3, by_epoch=False, begin=0, end=1000),
+    dict(type=LinearLR, start_factor=1.0 / 3, by_epoch=False, begin=0, end=500),
     dict(
         type=CosineAnnealingLR, begin=0, T_max=40, end=40, by_epoch=True, eta_min=1e-5
     ),

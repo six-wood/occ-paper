@@ -1,0 +1,1 @@
+/usr/bin/c++  -fPIC -Wall -Wextra -O3  -shared -Wl,-soname,mapping.cpython-38-x86_64-linux-gnu.so -o /home/lms/code/occ-paper/projects/occ_paper/utils/semankitti/mapping.cpython-38-x86_64-linux-gnu.so CMakeFiles/mapping.dir/mapping.cpp.o -flto 

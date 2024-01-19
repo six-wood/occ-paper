@@ -256,7 +256,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
         target = torch.zeros((batch_size, gt_shape[0], gt_shape[1], gt_shape[2]), dtype=torch.float32, device=voxel_dict["voxels"].device)
         for i in range(batch_size):
             coor = coors[coors[:, 0] == i]
-            bev_map[i, coor[i, 3], coor[i, 2], coor[i, 1]] = 255
+            bev_map[i, coor[:, 3], coor[:, 2], coor[:, 1]] = 1
             target[i] = torch.from_numpy(batch_data_samples[i].gt_pts_seg.voxel_label).cuda()
 
         ones = torch.ones_like(target)
