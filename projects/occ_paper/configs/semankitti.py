@@ -5,29 +5,32 @@ from mmengine.dataset.sampler import DefaultSampler
 from mmdet3d.datasets.transforms.loading import (
     LoadImageFromFile,
     LoadPointsFromFile,
+    LoadAnnotations3D,
 )
 from mmdet3d.models.segmentors.seg3d_tta import Seg3DTTAModel
 
-from projects.occ_paper.occ_paper.loading import LoadVoxelFromFile, LoadVoxelLabelFromFile, SemkittiRangeView
+from projects.occ_paper.occ_paper.loading import LoadVoxelLabelFromFile
+from projects.occ_paper.occ_paper.transforms_3d import ApplayVisMask, SemkittiRangeView
 from projects.occ_paper.occ_paper.formating import PackOccInputs
 from projects.occ_paper.occ_paper.semantickitti_dataset import (
     SemanticKittiSC as dataset_type,
 )
 
 from projects.occ_paper.occ_paper.ssc_metric import SSCMetric
+from mmengine.config import read_base
 
-point_cloud_range = [0, -25.6, -2.0, 51.2, 25.6, 4.4]
-voxel_size = [0.2, 0.2, 0.2]
+with read_base():
+    from .share_paramenter import *
 
 data_root = "data/semantickitti/"
 class_names = (
-    "occupied",
     "free",
+    "occupied",
 )
 palette = list(
     [
-        [255, 255, 255],
         [0, 0, 0],
+        [255, 255, 255],
     ]
 )
 
@@ -43,7 +46,9 @@ backend_args = None
 
 train_pipeline = [
     dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
-    dict(type=LoadVoxelLabelFromFile, grid_size=[256, 256, 32], scale="1_2"),
+    dict(type=LoadVoxelLabelFromFile, grid_size=[256, 256, 32], scale=scale),
+    dict(type=SemkittiRangeView),
+    dict(type=ApplayVisMask),
     dict(
         type=PackOccInputs,
         keys=["points", "voxel_label"],
@@ -52,6 +57,9 @@ train_pipeline = [
 
 test_pipeline = [
     dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
+    dict(type=LoadVoxelLabelFromFile, grid_size=[256, 256, 32], scale=scale),
+    dict(type=SemkittiRangeView),
+    dict(type=ApplayVisMask),
     dict(
         type=PackOccInputs,
         keys=["points", "voxel_label"],
@@ -68,6 +76,7 @@ train_split = dict(
     metainfo=metainfo,
     modality=input_modality,
     backend_args=backend_args,
+    ignore_index=ignore_index,
 )
 
 val_split = dict(
@@ -79,6 +88,7 @@ val_split = dict(
     modality=input_modality,
     test_mode=True,
     backend_args=backend_args,
+    ignore_index=ignore_index,
 )
 
 test_split = dict(
@@ -90,6 +100,7 @@ test_split = dict(
     modality=input_modality,
     test_mode=True,
     backend_args=backend_args,
+    ignore_index=ignore_index,
 )
 
 train_dataloader = dict(
@@ -102,7 +113,7 @@ train_dataloader = dict(
 
 val_dataloader = dict(
     batch_size=1,
-    num_workers=1,
+    num_workers=4,
     persistent_workers=True,
     drop_last=False,
     sampler=dict(type=DefaultSampler, shuffle=False),
@@ -111,7 +122,7 @@ val_dataloader = dict(
 
 test_dataloader = dict(
     batch_size=1,
-    num_workers=1,
+    num_workers=4,
     persistent_workers=True,
     drop_last=False,
     sampler=dict(type=DefaultSampler, shuffle=False),

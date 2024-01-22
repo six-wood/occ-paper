@@ -89,7 +89,7 @@ def parse_poses(filename, calibration):
 pose_dict = dict()
 
 
-def get_semantickitti_info(root_path, split):
+def get_semantickitti_info(root_path, split, sweep=10):
     """Create info file in the form of
     data_infos={
         'metainfo': {'DATASET': 'SemanticKITTI'},
@@ -122,7 +122,7 @@ def get_semantickitti_info(root_path, split):
         T_velo_2_cam = calib["Tr"]
         proj_matrix = P @ T_velo_2_cam
 
-        for j in range(0, total_num[i_folder]):
+        for j in range(0, total_num[i_folder], sweep):
             data_list.append(
                 {
                     "lidar_points": {
@@ -177,7 +177,7 @@ def get_semantickitti_info(root_path, split):
     return data_infos
 
 
-def create_semantickitti_info_file(root_path, pkl_prefix, save_path):
+def create_semantickitti_info_file(root_path, pkl_prefix, save_path, sweep=10):
     """Create info file of SemanticKITTI dataset.
 
     Directly generate info file without raw data.

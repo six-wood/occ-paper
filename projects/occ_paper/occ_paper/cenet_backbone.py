@@ -68,7 +68,7 @@ class BasicBlock(BaseModule):
 
 
 @MODELS.register_module()
-class CENet(BaseModule):
+class CusResNet(BaseModule):
     def __init__(
         self,
         in_channels: int = 5,
@@ -84,7 +84,7 @@ class CENet(BaseModule):
         act_cfg: ConfigType = dict(type="LeakyReLU"),
         init_cfg=None,
     ) -> None:
-        super(CENet, self).__init__(init_cfg)
+        super(CusResNet, self).__init__(init_cfg)
 
         assert len(stage_blocks) == len(out_channels) == len(strides) == len(dilations) == num_stages, (
             "The length of stage_blocks, out_channels, strides and " "dilations should be equal to num_stages"
@@ -137,7 +137,7 @@ class CENet(BaseModule):
             build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
             build_norm_layer(self.norm_cfg, out_channels)[1],
             build_activation_layer(self.act_cfg),
-        )
+        )  # conv block that bundles conv/norm/activation layers.
 
     def make_res_layer(
         self,
@@ -154,7 +154,7 @@ class CENet(BaseModule):
         if stride != 1 or inplanes != planes:  # downsample to match the dimensions
             downsample = nn.Sequential(
                 build_conv_layer(conv_cfg, inplanes, planes, kernel_size=1, stride=stride, bias=False), build_norm_layer(norm_cfg, planes)[1]
-            )
+            )  # configure the downsample layer
 
         layers = []
         layers.append(
@@ -168,7 +168,7 @@ class CENet(BaseModule):
                 norm_cfg=norm_cfg,
                 act_cfg=act_cfg,
             )
-        )
+        )  # add the first residual block
         inplanes = planes
         for _ in range(1, num_blocks):
             layers.append(

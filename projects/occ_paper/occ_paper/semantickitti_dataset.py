@@ -100,7 +100,6 @@ class SemanticKittiSC(SemanticKittiDataset):
             test_mode=test_mode,
             **kwargs,
         )
-        num_class = len(self.METAINFO["classes"])
 
         self.voxel_size = voxel_size
         self.img_W = 1220

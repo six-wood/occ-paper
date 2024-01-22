@@ -1,1 +1,0 @@
-/home/lms/code/occ-paper/projects/occ_paper/utils/semankitti/mapping/CMakeFiles/mapping.dir

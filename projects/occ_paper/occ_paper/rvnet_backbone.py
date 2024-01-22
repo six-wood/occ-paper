@@ -7,13 +7,13 @@ from torch._tensor import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 from mmdet3d.registry import MODELS
-from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
+from mmengine.model import BaseModule
 from mmdet3d.structures import Det3DDataSample
 from .ssc_loss import BCE_ssc_loss
 
 
 @MODELS.register_module()
-class LMSCNet_SS(MVXTwoStageDetector):
+class LMSCNet_SS(BaseModule):
     def __init__(
         self,
         class_num=None,
@@ -21,6 +21,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
         out_scale=None,
         gamma=0,
         alpha=0.5,
+        ignore_index=255,
         pts_voxel_encoder: Optional[dict] = None,
         pts_middle_encoder: Optional[dict] = None,
         pts_fusion_layer: Optional[dict] = None,
@@ -63,7 +64,8 @@ class LMSCNet_SS(MVXTwoStageDetector):
         self.gamma = gamma
         self.alpha = alpha
         self.input_dimensions = input_dimensions  # Grid dimensions should be (W, H, D).. z or height being axis 1
-        f = self.input_dimensions[1]
+        self.ignore_index = ignore_index
+        f = self.input_dimensions[1]  # Height of the input grid, H to channels
 
         self.pool = nn.MaxPool2d(2)  # [F=2; S=2; P=0; D=1]
 
@@ -80,7 +82,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
         )
 
         self.Encoder_block2 = nn.Sequential(
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(2),  # 1->0.5
             nn.Conv2d(f, int(f * 1.5), kernel_size=3, padding=1, stride=1),
             nn.ReLU(),
             nn.Conv2d(int(f * 1.5), int(f * 1.5), kernel_size=3, padding=1, stride=1),
@@ -88,7 +90,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
         )
 
         self.Encoder_block3 = nn.Sequential(
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(2),  # 0.5->0.25
             nn.Conv2d(int(f * 1.5), int(f * 2), kernel_size=3, padding=1, stride=1),
             nn.ReLU(),
             nn.Conv2d(int(f * 2), int(f * 2), kernel_size=3, padding=1, stride=1),
@@ -96,7 +98,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
         )
 
         self.Encoder_block4 = nn.Sequential(
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(2),  # 0.25->0.125
             nn.Conv2d(int(f * 2), int(f * 2.5), kernel_size=3, padding=1, stride=1),
             nn.ReLU(),
             nn.Conv2d(int(f * 2.5), int(f * 2.5), kernel_size=3, padding=1, stride=1),
@@ -104,39 +106,41 @@ class LMSCNet_SS(MVXTwoStageDetector):
         )
 
         # Treatment output 1:8
-        self.conv_out_scale_1_8 = nn.Conv2d(int(f * 2.5), int(f / 8), kernel_size=3, padding=1, stride=1)
-        self.deconv_1_8__1_2 = nn.ConvTranspose2d(int(f / 8), int(f / 8), kernel_size=4, padding=0, stride=4)
-        self.deconv_1_8__1_1 = nn.ConvTranspose2d(int(f / 8), int(f / 8), kernel_size=8, padding=0, stride=8)
+        self.conv_out_scale_1_8 = nn.Conv2d(int(f * 2.5), int(f / 8), kernel_size=3, padding=1, stride=1)  # channel->H/8
+        self.deconv_1_8__1_2 = nn.ConvTranspose2d(int(f / 8), int(f / 8), kernel_size=4, padding=0, stride=4)  # 0.125->0.5
+        self.deconv_1_8__1_1 = nn.ConvTranspose2d(int(f / 8), int(f / 8), kernel_size=8, padding=0, stride=8)  # 0.125->1
 
         # Treatment output 1:4
         if self.out_scale == "1_4" or self.out_scale == "1_2" or self.out_scale == "1_1":
-            self.deconv1_8 = nn.ConvTranspose2d(int(f / 8), int(f / 8), kernel_size=6, padding=2, stride=2)
-            self.conv1_4 = nn.Conv2d(int(f * 2) + int(f / 8), int(f * 2), kernel_size=3, padding=1, stride=1)
-            self.conv_out_scale_1_4 = nn.Conv2d(int(f * 2), int(f / 4), kernel_size=3, padding=1, stride=1)
-            self.deconv_1_4__1_1 = nn.ConvTranspose2d(int(f / 4), int(f / 4), kernel_size=4, padding=0, stride=4)
+            self.deconv1_8 = nn.ConvTranspose2d(int(f / 8), int(f / 8), kernel_size=6, padding=2, stride=2)  # 0.125->0.25
+            self.conv1_4 = nn.Conv2d(
+                int(f * 2) + int(f / 8), int(f * 2), kernel_size=3, padding=1, stride=1
+            )  # fuse feature maps from encoder block 3 and deconv1_8
+            self.conv_out_scale_1_4 = nn.Conv2d(int(f * 2), int(f / 4), kernel_size=3, padding=1, stride=1)  # channel->H/4
+            self.deconv_1_4__1_1 = nn.ConvTranspose2d(int(f / 4), int(f / 4), kernel_size=4, padding=0, stride=4)  # 0.25->1
 
         # Treatment output 1:2
         if self.out_scale == "1_2" or self.out_scale == "1_1":
-            self.deconv1_4 = nn.ConvTranspose2d(int(f / 4), int(f / 4), kernel_size=6, padding=2, stride=2)
+            self.deconv1_4 = nn.ConvTranspose2d(int(f / 4), int(f / 4), kernel_size=6, padding=2, stride=2)  # 0.25->0.5
             self.conv1_2 = nn.Conv2d(
                 int(f * 1.5) + int(f / 4) + int(f / 8),
                 int(f * 1.5),
                 kernel_size=3,
                 padding=1,
                 stride=1,
-            )
-            self.conv_out_scale_1_2 = nn.Conv2d(int(f * 1.5), int(f / 2), kernel_size=3, padding=1, stride=1)
+            )  # fuse feature maps from encoder block 2, deconv1_4 and deconv1_8
+            self.conv_out_scale_1_2 = nn.Conv2d(int(f * 1.5), int(f / 2), kernel_size=3, padding=1, stride=1)  # channel->H/2
 
         # Treatment output 1:1
         if self.out_scale == "1_1":
-            self.deconv1_2 = nn.ConvTranspose2d(int(f / 2), int(f / 2), kernel_size=6, padding=2, stride=2)
+            self.deconv1_2 = nn.ConvTranspose2d(int(f / 2), int(f / 2), kernel_size=6, padding=2, stride=2)  # 0.5->1
             self.conv1_1 = nn.Conv2d(
                 int(f / 8) + int(f / 4) + int(f / 2) + int(f),
                 f,
                 kernel_size=3,
                 padding=1,
                 stride=1,
-            )
+            )  # fuse feature maps from encoder block 1, deconv1_2, deconv1_4 and deconv1_8
 
         if self.out_scale == "1_1":
             self.seg_head_1_1 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
@@ -147,7 +151,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
         elif self.out_scale == "1_8":
             self.seg_head_1_8 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
 
-    def step(self, input):
+    def forward(self, input):
         # input = x['3D_OCCUPANCY']  # Input to LMSCNet model is 3D occupancy big scale (1:1) [bs, 1, W, H, D]
         # input = torch.squeeze(input, dim=1).permute(0, 2, 1, 3)  # Reshaping to the right way for 2D convs [bs, H, W, D]
 
@@ -175,10 +179,10 @@ class LMSCNet_SS(MVXTwoStageDetector):
 
         elif self.out_scale == "1_4":
             # Out 1_4
-            out = self.deconv1_8(out_scale_1_8__2D)
-            out = torch.cat((out, _skip_1_4), 1)
-            out = F.relu(self.conv1_4(out))
-            out_scale_1_4__2D = self.conv_out_scale_1_4(out)
+            out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
+            out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
+            out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
+            out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
 
             out_scale_1_4__3D = self.seg_head_1_4(out_scale_1_4__2D)  # [1, 20, 16, 128, 128]
             out_scale_1_4__3D = out_scale_1_4__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
@@ -186,15 +190,15 @@ class LMSCNet_SS(MVXTwoStageDetector):
 
         elif self.out_scale == "1_2":
             # Out 1_4
-            out = self.deconv1_8(out_scale_1_8__2D)
-            out = torch.cat((out, _skip_1_4), 1)
-            out = F.relu(self.conv1_4(out))
-            out_scale_1_4__2D = self.conv_out_scale_1_4(out)
+            out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
+            out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
+            out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
+            out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
 
             # Out 1_2
-            out = self.deconv1_4(out_scale_1_4__2D)
-            out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)
-            out = F.relu(self.conv1_2(out))  # torch.Size([1, 48, 128, 128])
+            out = self.deconv1_4(out_scale_1_4__2D)  # [1, 8, 128, 128]
+            out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)  # [1, 60, 128, 128]
+            out = F.relu(self.conv1_2(out))  # torch.Size([1, 60, 128, 128])
             out_scale_1_2__2D = self.conv_out_scale_1_2(out)  # torch.Size([1, 16, 128, 128])
 
             out_scale_1_2__3D = self.seg_head_1_2(out_scale_1_2__2D)  # [1, 20, 16, 128, 128]
@@ -203,23 +207,23 @@ class LMSCNet_SS(MVXTwoStageDetector):
 
         elif self.out_scale == "1_1":
             # Out 1_4
-            out = self.deconv1_8(out_scale_1_8__2D)
-            print("out.shape", out.shape)  # [1, 4, 64, 64]
-            out = torch.cat((out, _skip_1_4), 1)
-            out = F.relu(self.conv1_4(out))
-            out_scale_1_4__2D = self.conv_out_scale_1_4(out)
+            out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
+            # print("out.shape", out.shape)  # [1, 4, 64, 64]
+            out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
+            out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
+            out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
             # print('out_scale_1_4__2D.shape', out_scale_1_4__2D.shape)  # [1, 8, 64, 64]
 
             # Out 1_2
-            out = self.deconv1_4(out_scale_1_4__2D)
-            print("out.shape", out.shape)  # [1, 8, 128, 128]
-            out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)
-            out = F.relu(self.conv1_2(out))  # torch.Size([1, 48, 128, 128])
+            out = self.deconv1_4(out_scale_1_4__2D)  # [1, 8, 128, 128]
+            # print("out.shape", out.shape)  # [1, 8, 128, 128]
+            out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)  # [1, 48+8+4, 128, 128]
+            out = F.relu(self.conv1_2(out))  # torch.Size([1, 60, 128, 128])
             out_scale_1_2__2D = self.conv_out_scale_1_2(out)  # torch.Size([1, 16, 128, 128])
             # print('out_scale_1_2__2D.shape', out_scale_1_2__2D.shape)  # [1, 16, 128, 128]
 
             # Out 1_1
-            out = self.deconv1_2(out_scale_1_2__2D)
+            out = self.deconv1_2(out_scale_1_2__2D)  # [1, 16, 256, 256]
             out = torch.cat(
                 (
                     out,
@@ -228,7 +232,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
                     self.deconv_1_8__1_1(out_scale_1_8__2D),
                 ),
                 1,
-            )
+            )  # [1, 32+16+8+4, 256, 256]
             out_scale_1_1__2D = F.relu(self.conv1_1(out))  # [bs, 32, 256, 256]
 
             out_scale_1_1__3D = self.seg_head_1_1(out_scale_1_1__2D)
@@ -249,18 +253,26 @@ class LMSCNet_SS(MVXTwoStageDetector):
 
     def get_bev_map(self, voxel_dict, batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
         batch_size = len(batch_data_samples)
-        coors = voxel_dict["coors"]
+        coors = voxel_dict["coors"]  # z y x
         grid_shape = self.data_preprocessor.voxel_layer.grid_shape
         gt_shape = batch_data_samples[0].gt_pts_seg.voxel_label.shape
-        bev_map = torch.zeros((batch_size, grid_shape[0], grid_shape[1], grid_shape[2]), dtype=torch.float32, device=voxel_dict["voxels"].device)
-        target = torch.zeros((batch_size, gt_shape[0], gt_shape[1], gt_shape[2]), dtype=torch.float32, device=voxel_dict["voxels"].device)
+        bev_map = torch.zeros(
+            (batch_size, grid_shape[0], grid_shape[1], grid_shape[2]),
+            dtype=torch.float32,
+            device=voxel_dict["voxels"].device,
+        )  # b x y z
+        target = torch.zeros(
+            (batch_size, gt_shape[0], gt_shape[1], gt_shape[2]),
+            dtype=torch.float32,
+            device=voxel_dict["voxels"].device,
+        )  # b x y z
         for i in range(batch_size):
             coor = coors[coors[:, 0] == i]
             bev_map[i, coor[:, 3], coor[:, 2], coor[:, 1]] = 1
             target[i] = torch.from_numpy(batch_data_samples[i].gt_pts_seg.voxel_label).cuda()
 
         ones = torch.ones_like(target)
-        target = torch.where(torch.logical_or(target == 255, target == 0), target, ones)
+        target = torch.where(torch.logical_or(target == self.ignore_index, target == 0), target, ones)
 
         return bev_map, target
 
@@ -268,12 +280,12 @@ class LMSCNet_SS(MVXTwoStageDetector):
         voxel_dict = batch_inputs_dict["voxels"]
         bev_map, target = self.get_bev_map(voxel_dict, batch_data_samples)
 
-        out_level_1 = self.step(bev_map.permute(0, 3, 1, 2).to(target.device))
+        out_level_1 = self.forward(bev_map.permute(0, 3, 1, 2).to(target.device))
         # calculate loss
         losses = dict()
         losses_pts = dict()
         class_weights_level_1 = self.class_weights_level_1.type_as(target)
-        loss_sc_level_1 = BCE_ssc_loss(out_level_1, target, class_weights_level_1, self.alpha)
+        loss_sc_level_1 = BCE_ssc_loss(out_level_1, target, class_weights_level_1, self.alpha, self.ignore_index)
         losses_pts["loss_sc_level_1"] = loss_sc_level_1
 
         losses.update(losses_pts)
@@ -284,7 +296,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
         voxel_dict = batch_inputs_dict["voxels"]
         bev_map, target = self.get_bev_map(voxel_dict, batch_data_samples)
 
-        sc_pred = self.step(bev_map.permute(0, 3, 1, 2).to(target.device))
+        sc_pred = self.forward(bev_map.permute(0, 3, 1, 2).to(target.device))
         y_pred = sc_pred.detach().cpu().numpy()  # [1, 20, 128, 128, 16]
         y_pred = np.argmax(y_pred, axis=1).astype(np.uint8)  # [1, 128, 128, 16]
 
