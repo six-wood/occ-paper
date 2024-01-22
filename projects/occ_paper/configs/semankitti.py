@@ -9,10 +9,10 @@ from mmdet3d.datasets.transforms.loading import (
 )
 from mmdet3d.models.segmentors.seg3d_tta import Seg3DTTAModel
 
-from projects.occ_paper.occ_paper.loading import LoadVoxelLabelFromFile
-from projects.occ_paper.occ_paper.transforms_3d import ApplayVisMask, SemkittiRangeView
-from projects.occ_paper.occ_paper.formating import PackOccInputs
-from projects.occ_paper.occ_paper.semantickitti_dataset import (
+from projects.occ_paper.occ_paper.datasets.loading import LoadVoxelLabelFromFile
+from projects.occ_paper.occ_paper.datasets.transforms_3d import ApplayVisMask, SemkittiRangeView
+from projects.occ_paper.occ_paper.datasets.formating import PackOccInputs
+from projects.occ_paper.occ_paper.datasets.semantickitti_dataset import (
     SemanticKittiSC as dataset_type,
 )
 

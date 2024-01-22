@@ -1,6 +1,4 @@
-from projects.occ_paper.occ_paper.rvnet_backbone import LMSCNet_SS
-from projects.occ_paper.occ_paper.hungarian_assigner_3d import HungarianAssigner3D
-from projects.occ_paper.occ_paper.match_cost import FocalLossCost, BBox3DL1Cost, IoUCost
+from projects.occ_paper.occ_paper.backbones.rvnet_backbone import LMSCNet_SS
 from mmdet3d.models.data_preprocessors import Det3DDataPreprocessor
 from mmengine.config import read_base
 

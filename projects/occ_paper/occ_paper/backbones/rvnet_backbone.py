@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
 from mmdet3d.structures import Det3DDataSample
-from .ssc_loss import BCE_ssc_loss
+from ..ssc_loss import BCE_ssc_loss
 
 
 @MODELS.register_module()
@@ -22,39 +22,9 @@ class LMSCNet_SS(BaseModule):
         gamma=0,
         alpha=0.5,
         ignore_index=255,
-        pts_voxel_encoder: Optional[dict] = None,
-        pts_middle_encoder: Optional[dict] = None,
-        pts_fusion_layer: Optional[dict] = None,
-        img_backbone: Optional[dict] = None,
-        pts_backbone: Optional[dict] = None,
-        img_neck: Optional[dict] = None,
-        pts_neck: Optional[dict] = None,
-        pts_bbox_head: Optional[dict] = None,
-        img_roi_head: Optional[dict] = None,
-        img_rpn_head: Optional[dict] = None,
-        train_cfg: Optional[dict] = None,
-        test_cfg: Optional[dict] = None,
-        init_cfg: Optional[dict] = None,
-        data_preprocessor: Optional[dict] = None,
-        **kwargs
+        init_cfg=None,
     ):
-        super().__init__(
-            pts_voxel_encoder,
-            pts_middle_encoder,
-            pts_fusion_layer,
-            img_backbone,
-            pts_backbone,
-            img_neck,
-            pts_neck,
-            pts_bbox_head,
-            img_roi_head,
-            img_rpn_head,
-            train_cfg,
-            test_cfg,
-            init_cfg,
-            data_preprocessor,
-            **kwargs
-        )
+        super().__init__(init_cfg=init_cfg)
         """
         SSCNet architecture
         :param N: number of classes to be predicted (i.e. 12 for NYUv2)
@@ -142,23 +112,14 @@ class LMSCNet_SS(BaseModule):
                 stride=1,
             )  # fuse feature maps from encoder block 1, deconv1_2, deconv1_4 and deconv1_8
 
-        if self.out_scale == "1_1":
-            self.seg_head_1_1 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
-        elif self.out_scale == "1_2":
-            self.seg_head_1_2 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
-        elif self.out_scale == "1_4":
-            self.seg_head_1_4 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
-        elif self.out_scale == "1_8":
-            self.seg_head_1_8 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
-
-    def forward(self, input):
+    def forward(self, x: Tensor):
         # input = x['3D_OCCUPANCY']  # Input to LMSCNet model is 3D occupancy big scale (1:1) [bs, 1, W, H, D]
         # input = torch.squeeze(input, dim=1).permute(0, 2, 1, 3)  # Reshaping to the right way for 2D convs [bs, H, W, D]
 
         # print(input.shape) [4, 32, 256, 256]
 
         # Encoder block
-        _skip_1_1 = self.Encoder_block1(input)
+        _skip_1_1 = self.Encoder_block1(x)
         # print('_skip_1_1.shape', _skip_1_1.shape)  # [1, 32, 256, 256]
         _skip_1_2 = self.Encoder_block2(_skip_1_1)
         # print('_skip_1_2.shape', _skip_1_2.shape)  # [1, 48, 128, 128]
@@ -173,9 +134,7 @@ class LMSCNet_SS(BaseModule):
         # print('out_scale_1_8__2D.shape', out_scale_1_8__2D.shape)  # [1, 4, 32, 32]
 
         if self.out_scale == "1_8":
-            out_scale_1_8__3D = self.seg_head_1_8(out_scale_1_8__2D)  # [1, 20, 16, 128, 128]
-            out_scale_1_8__3D = out_scale_1_8__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
-            return out_scale_1_8__3D
+            return out_scale_1_8__2D
 
         elif self.out_scale == "1_4":
             # Out 1_4
@@ -184,9 +143,7 @@ class LMSCNet_SS(BaseModule):
             out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
             out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
 
-            out_scale_1_4__3D = self.seg_head_1_4(out_scale_1_4__2D)  # [1, 20, 16, 128, 128]
-            out_scale_1_4__3D = out_scale_1_4__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
-            return out_scale_1_4__3D
+            return out_scale_1_4__2D
 
         elif self.out_scale == "1_2":
             # Out 1_4
@@ -201,9 +158,7 @@ class LMSCNet_SS(BaseModule):
             out = F.relu(self.conv1_2(out))  # torch.Size([1, 60, 128, 128])
             out_scale_1_2__2D = self.conv_out_scale_1_2(out)  # torch.Size([1, 16, 128, 128])
 
-            out_scale_1_2__3D = self.seg_head_1_2(out_scale_1_2__2D)  # [1, 20, 16, 128, 128]
-            out_scale_1_2__3D = out_scale_1_2__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
-            return out_scale_1_2__3D
+            return out_scale_1_2__2D
 
         elif self.out_scale == "1_1":
             # Out 1_4
@@ -235,10 +190,7 @@ class LMSCNet_SS(BaseModule):
             )  # [1, 32+16+8+4, 256, 256]
             out_scale_1_1__2D = F.relu(self.conv1_1(out))  # [bs, 32, 256, 256]
 
-            out_scale_1_1__3D = self.seg_head_1_1(out_scale_1_1__2D)
-            # Take back to [W, H, D] axis order
-            out_scale_1_1__3D = out_scale_1_1__3D.permute(0, 1, 3, 4, 2)  # [bs, C, H, W, D] -> [bs, C, W, H, D]
-            return out_scale_1_1__3D
+            return out_scale_1_1__2D
 
     def pack(self, array):
         """convert a boolean array into a bitwise array."""
