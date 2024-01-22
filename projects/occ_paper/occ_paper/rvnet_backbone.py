@@ -9,11 +9,12 @@ import torch.nn.functional as F
 from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
 from mmdet3d.structures import Det3DDataSample
+from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
 from .ssc_loss import BCE_ssc_loss
 
 
 @MODELS.register_module()
-class LMSCNet_SS(BaseModule):
+class LMSCNet_SS(MVXTwoStageDetector):
     def __init__(
         self,
         class_num=None,
@@ -151,7 +152,7 @@ class LMSCNet_SS(BaseModule):
         elif self.out_scale == "1_8":
             self.seg_head_1_8 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
 
-    def forward(self, input):
+    def step(self, input):
         # input = x['3D_OCCUPANCY']  # Input to LMSCNet model is 3D occupancy big scale (1:1) [bs, 1, W, H, D]
         # input = torch.squeeze(input, dim=1).permute(0, 2, 1, 3)  # Reshaping to the right way for 2D convs [bs, H, W, D]
 
@@ -280,7 +281,7 @@ class LMSCNet_SS(BaseModule):
         voxel_dict = batch_inputs_dict["voxels"]
         bev_map, target = self.get_bev_map(voxel_dict, batch_data_samples)
 
-        out_level_1 = self.forward(bev_map.permute(0, 3, 1, 2).to(target.device))
+        out_level_1 = self.step(bev_map.permute(0, 3, 1, 2).to(target.device))
         # calculate loss
         losses = dict()
         losses_pts = dict()
@@ -296,7 +297,7 @@ class LMSCNet_SS(BaseModule):
         voxel_dict = batch_inputs_dict["voxels"]
         bev_map, target = self.get_bev_map(voxel_dict, batch_data_samples)
 
-        sc_pred = self.forward(bev_map.permute(0, 3, 1, 2).to(target.device))
+        sc_pred = self.step(bev_map.permute(0, 3, 1, 2).to(target.device))
         y_pred = sc_pred.detach().cpu().numpy()  # [1, 20, 128, 128, 16]
         y_pred = np.argmax(y_pred, axis=1).astype(np.uint8)  # [1, 128, 128, 16]
 
