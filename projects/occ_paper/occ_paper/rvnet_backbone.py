@@ -234,7 +234,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
                 ),
                 1,
             )  # [1, 32+16+8+4, 256, 256]
-            out_scale_1_1__2D = F.relu(self.conv1_1(out))  # [bs, 32, 256, 256]
+            out_scale_1_1__2D = F.relu(self.conv1_1(out) + input)  # [bs, 32, 256, 256]
 
             out_scale_1_1__3D = self.seg_head_1_1(out_scale_1_1__2D)
             # Take back to [W, H, D] axis order
