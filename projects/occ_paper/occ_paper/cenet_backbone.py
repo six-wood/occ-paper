@@ -21,7 +21,7 @@ class BasicBlock(BaseModule):
         downsample: Optional[nn.Module] = None,
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
-        act_cfg: ConfigType = dict(type="LeakyReLU"),
+        act_cfg: ConfigType = dict(type="ReLU"),
         init_cfg: OptMultiConfig = None,
     ) -> None:
         super(BasicBlock, self).__init__(init_cfg)

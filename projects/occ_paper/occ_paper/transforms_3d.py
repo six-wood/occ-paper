@@ -137,7 +137,6 @@ class SemkittiRangeView(BaseTransform):
         order = np.argsort(depth)[::-1]
         proj_idx[proj_y[order], proj_x[order]] = indices[order]
         proj_image[proj_y[order], proj_x[order], 0] = depth[order]
-        show_depth = proj_image[..., 0].copy()
         proj_image[proj_y[order], proj_x[order], 1:] = points_numpy[order]
         proj_mask = (proj_idx > 0).astype(np.int32)
         results["proj_range"] = proj_image[..., 0]

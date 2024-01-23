@@ -10,6 +10,9 @@ from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
 from mmdet3d.structures import Det3DDataSample
 from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
+from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
+from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
+
 from .ssc_loss import BCE_ssc_loss
 
 
@@ -17,8 +20,11 @@ from .ssc_loss import BCE_ssc_loss
 class LMSCNet_SS(MVXTwoStageDetector):
     def __init__(
         self,
-        class_num=None,
         input_dimensions=None,
+        conv_cfg: OptConfigType = None,
+        norm_cfg: ConfigType = dict(type="BN"),
+        act_cfg: ConfigType = dict(type="ReLU"),
+        class_num=None,
         out_scale=None,
         gamma=0,
         alpha=0.5,
@@ -60,6 +66,12 @@ class LMSCNet_SS(MVXTwoStageDetector):
         SSCNet architecture
         :param N: number of classes to be predicted (i.e. 12 for NYUv2)
         """
+
+        # model parameters
+        self.conv_cfg = conv_cfg
+        self.norm_cfg = norm_cfg
+        self.act_cfg = act_cfg
+
         self.out_scale = out_scale
         self.nbr_classes = class_num
         self.gamma = gamma
@@ -75,171 +87,79 @@ class LMSCNet_SS(MVXTwoStageDetector):
 
         self.class_weights_level_1 = torch.from_numpy(1 / np.log(self.class_frequencies_level1 + 0.001))
 
-        self.Encoder_block1 = nn.Sequential(
-            nn.Conv2d(f, f, kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(f, f, kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
+        self.Encoder_block1 = self._make_conv_layer(f, f)
+        self.Encoder_block2 = self._make_encoder_layer(f, int(f * 1.5))
+        self.Encoder_block3 = self._make_encoder_layer(int(f * 1.5), int(f * 2))
+        self.Encoder_block4 = self._make_encoder_layer(int(f * 2), int(f * 2.5))
+
+        self.Decoder_block1 = self._make_decoder_layer(int(f * 2.5), int(f * 2))
+        self.Decoder_block2 = self._make_decoder_layer(int(f * 4), int(f * 1.5))
+        self.Decoder_block3 = self._make_decoder_layer(int(f * 3), f)
+        self.Decoder_block4 = self._make_conv_layer(int(f * 2), f)
+
+        self.up_sample1 = nn.ConvTranspose2d(int(f * 2), int(f * 2), kernel_size=4, padding=0, stride=4, bias=False)
+        self.up_sample2 = nn.ConvTranspose2d(int(f * 1.5), int(f * 1.5), kernel_size=6, padding=2, stride=2, bias=False)
+
+        self.fuse_block = self._make_fuse_layer(int(f * 2) + int(f * 1.5) + int(f) + int(f), f)
+
+        self.seg_head = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
+
+    def _make_conv_layer(self, in_channels: int, out_channels: int) -> None:  # two conv blocks in beginning
+        return nn.Sequential(
+            build_conv_layer(self.conv_cfg, in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
+            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
         )
 
-        self.Encoder_block2 = nn.Sequential(
-            nn.MaxPool2d(2),  # 1->0.5
-            nn.Conv2d(f, int(f * 1.5), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(int(f * 1.5), int(f * 1.5), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
+    def _make_encoder_layer(self, in_channels: int, out_channels: int) -> None:  # create encoder blocks
+        return nn.Sequential(
+            nn.MaxPool2d(2),
+            build_conv_layer(self.conv_cfg, in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
+            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
         )
 
-        self.Encoder_block3 = nn.Sequential(
-            nn.MaxPool2d(2),  # 0.5->0.25
-            nn.Conv2d(int(f * 1.5), int(f * 2), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(int(f * 2), int(f * 2), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
+    def _make_decoder_layer(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2, bias=False),
+            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
+            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
         )
 
-        self.Encoder_block4 = nn.Sequential(
-            nn.MaxPool2d(2),  # 0.25->0.125
-            nn.Conv2d(int(f * 2), int(f * 2.5), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(int(f * 2.5), int(f * 2.5), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
+    def _make_fuse_layer(self, in_channels, out_channels):
+        return nn.Sequential(
+            build_conv_layer(self.conv_cfg, in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
         )
 
-        # Treatment output 1:8
-        self.conv_out_scale_1_8 = nn.Conv2d(int(f * 2.5), int(f / 8), kernel_size=3, padding=1, stride=1)  # channel->H/8
-        self.deconv_1_8__1_2 = nn.ConvTranspose2d(int(f / 8), int(f / 8), kernel_size=4, padding=0, stride=4)  # 0.125->0.5
-        self.deconv_1_8__1_1 = nn.ConvTranspose2d(int(f / 8), int(f / 8), kernel_size=8, padding=0, stride=8)  # 0.125->1
+    def step(self, x):
+        # Encoder
+        enc1 = self.Encoder_block1(x)  # [bs, 32, 256, 256]
+        enc2 = self.Encoder_block2(enc1)  # [bs, 48, 128, 128]
+        enc3 = self.Encoder_block3(enc2)  # [bs, 64, 64, 64]
+        enc4 = self.Encoder_block4(enc3)  # [bs, 80, 32, 32]
 
-        # Treatment output 1:4
-        if self.out_scale == "1_4" or self.out_scale == "1_2" or self.out_scale == "1_1":
-            self.deconv1_8 = nn.ConvTranspose2d(int(f / 8), int(f / 8), kernel_size=6, padding=2, stride=2)  # 0.125->0.25
-            self.conv1_4 = nn.Conv2d(
-                int(f * 2) + int(f / 8), int(f * 2), kernel_size=3, padding=1, stride=1
-            )  # fuse feature maps from encoder block 3 and deconv1_8
-            self.conv_out_scale_1_4 = nn.Conv2d(int(f * 2), int(f / 4), kernel_size=3, padding=1, stride=1)  # channel->H/4
-            self.deconv_1_4__1_1 = nn.ConvTranspose2d(int(f / 4), int(f / 4), kernel_size=4, padding=0, stride=4)  # 0.25->1
+        # Decoder modify
+        dec1 = self.Decoder_block1(enc4)  # [bs, 64, 64, 64]
+        dec2 = self.Decoder_block2(torch.cat([dec1, enc3], dim=1))  # [bs, 48, 128, 128]
+        dec3 = self.Decoder_block3(torch.cat([dec2, enc2], dim=1))  # [bs, 32, 256, 256]
+        dec4 = self.Decoder_block4(torch.cat([dec3, enc1], dim=1))  # [bs, 32, 256, 256]
 
-        # Treatment output 1:2
-        if self.out_scale == "1_2" or self.out_scale == "1_1":
-            self.deconv1_4 = nn.ConvTranspose2d(int(f / 4), int(f / 4), kernel_size=6, padding=2, stride=2)  # 0.25->0.5
-            self.conv1_2 = nn.Conv2d(
-                int(f * 1.5) + int(f / 4) + int(f / 8),
-                int(f * 1.5),
-                kernel_size=3,
-                padding=1,
-                stride=1,
-            )  # fuse feature maps from encoder block 2, deconv1_4 and deconv1_8
-            self.conv_out_scale_1_2 = nn.Conv2d(int(f * 1.5), int(f / 2), kernel_size=3, padding=1, stride=1)  # channel->H/2
+        fuse1 = self.up_sample1(dec1)  # [bs, 64, 256, 256]
+        fuse2 = self.up_sample2(dec2)  # [bs, 48, 256, 256]
+        fuse = torch.cat([fuse1, fuse2, dec3, dec4], dim=1)  # [bs, 32+48+64+80, 256, 256]
+        out_2D = self.fuse_block(fuse)  # [bs, 32, 256, 256]
 
-        # Treatment output 1:1
-        if self.out_scale == "1_1":
-            self.deconv1_2 = nn.ConvTranspose2d(int(f / 2), int(f / 2), kernel_size=6, padding=2, stride=2)  # 0.5->1
-            self.conv1_1 = nn.Conv2d(
-                int(f / 8) + int(f / 4) + int(f / 2) + int(f),
-                f,
-                kernel_size=3,
-                padding=1,
-                stride=1,
-            )  # fuse feature maps from encoder block 1, deconv1_2, deconv1_4 and deconv1_8
+        # out_2D = out_2D + x
 
-        if self.out_scale == "1_1":
-            self.seg_head_1_1 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
-        elif self.out_scale == "1_2":
-            self.seg_head_1_2 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
-        elif self.out_scale == "1_4":
-            self.seg_head_1_4 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
-        elif self.out_scale == "1_8":
-            self.seg_head_1_8 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
-
-    def step(self, input):
-        # input = x['3D_OCCUPANCY']  # Input to LMSCNet model is 3D occupancy big scale (1:1) [bs, 1, W, H, D]
-        # input = torch.squeeze(input, dim=1).permute(0, 2, 1, 3)  # Reshaping to the right way for 2D convs [bs, H, W, D]
-
-        # print(input.shape) [4, 32, 256, 256]
-
-        # Encoder block
-        _skip_1_1 = self.Encoder_block1(input)
-        # print('_skip_1_1.shape', _skip_1_1.shape)  # [1, 32, 256, 256]
-        _skip_1_2 = self.Encoder_block2(_skip_1_1)
-        # print('_skip_1_2.shape', _skip_1_2.shape)  # [1, 48, 128, 128]
-        _skip_1_4 = self.Encoder_block3(_skip_1_2)
-        # print('_skip_1_4.shape', _skip_1_4.shape)  # [1, 64, 64, 64]
-        _skip_1_8 = self.Encoder_block4(_skip_1_4)
-        # print('_skip_1_8.shape', _skip_1_8.shape)  # [1, 80, 32, 32]
-
-        # Out 1_8
-        out_scale_1_8__2D = self.conv_out_scale_1_8(_skip_1_8)
-
-        # print('out_scale_1_8__2D.shape', out_scale_1_8__2D.shape)  # [1, 4, 32, 32]
-
-        if self.out_scale == "1_8":
-            out_scale_1_8__3D = self.seg_head_1_8(out_scale_1_8__2D)  # [1, 20, 16, 128, 128]
-            out_scale_1_8__3D = out_scale_1_8__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
-            return out_scale_1_8__3D
-
-        elif self.out_scale == "1_4":
-            # Out 1_4
-            out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
-            out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
-            out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
-            out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
-
-            out_scale_1_4__3D = self.seg_head_1_4(out_scale_1_4__2D)  # [1, 20, 16, 128, 128]
-            out_scale_1_4__3D = out_scale_1_4__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
-            return out_scale_1_4__3D
-
-        elif self.out_scale == "1_2":
-            # Out 1_4
-            out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
-            out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
-            out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
-            out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
-
-            # Out 1_2
-            out = self.deconv1_4(out_scale_1_4__2D)  # [1, 8, 128, 128]
-            out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)  # [1, 60, 128, 128]
-            out = F.relu(self.conv1_2(out))  # torch.Size([1, 60, 128, 128])
-            out_scale_1_2__2D = self.conv_out_scale_1_2(out)  # torch.Size([1, 16, 128, 128])
-
-            out_scale_1_2__3D = self.seg_head_1_2(out_scale_1_2__2D)  # [1, 20, 16, 128, 128]
-            out_scale_1_2__3D = out_scale_1_2__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
-            return out_scale_1_2__3D
-
-        elif self.out_scale == "1_1":
-            # Out 1_4
-            out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
-            # print("out.shape", out.shape)  # [1, 4, 64, 64]
-            out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
-            out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
-            out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
-            # print('out_scale_1_4__2D.shape', out_scale_1_4__2D.shape)  # [1, 8, 64, 64]
-
-            # Out 1_2
-            out = self.deconv1_4(out_scale_1_4__2D)  # [1, 8, 128, 128]
-            # print("out.shape", out.shape)  # [1, 8, 128, 128]
-            out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)  # [1, 48+8+4, 128, 128]
-            out = F.relu(self.conv1_2(out))  # torch.Size([1, 60, 128, 128])
-            out_scale_1_2__2D = self.conv_out_scale_1_2(out)  # torch.Size([1, 16, 128, 128])
-            # print('out_scale_1_2__2D.shape', out_scale_1_2__2D.shape)  # [1, 16, 128, 128]
-
-            # Out 1_1
-            out = self.deconv1_2(out_scale_1_2__2D)  # [1, 16, 256, 256]
-            out = torch.cat(
-                (
-                    out,
-                    _skip_1_1,
-                    self.deconv_1_4__1_1(out_scale_1_4__2D),
-                    self.deconv_1_8__1_1(out_scale_1_8__2D),
-                ),
-                1,
-            )  # [1, 32+16+8+4, 256, 256]
-            out_scale_1_1__2D = F.relu(self.conv1_1(out))  # [bs, 32, 256, 256]
-
-            out_scale_1_1__3D = self.seg_head_1_1(out_scale_1_1__2D)
-            # Take back to [W, H, D] axis order
-            out_scale_1_1__3D = out_scale_1_1__3D.permute(0, 1, 3, 4, 2)  # [bs, C, H, W, D] -> [bs, C, W, H, D]
-            return out_scale_1_1__3D
+        out_3D = self.seg_head(out_2D)
+        # Take back to [W, H, D] axis order
+        out_3D = out_3D.permute(0, 1, 3, 4, 2)  # [bs, C, H, W, D] -> [bs, C, W, H, D]
+        return out_3D
 
     def pack(self, array):
         """convert a boolean array into a bitwise array."""
@@ -299,7 +219,9 @@ class LMSCNet_SS(MVXTwoStageDetector):
 
         sc_pred = self.step(bev_map.permute(0, 3, 1, 2).to(target.device))
         y_pred = sc_pred.detach().cpu().numpy()  # [1, 20, 128, 128, 16]
-        y_pred = np.argmax(y_pred, axis=1).astype(np.uint8)  # [1, 128, 128, 16]
+        y_pred = np.argmax(y_pred, axis=1).astype(np.uint8)
+        y_in = bev_map.detach().cpu().numpy().astype(np.uint8)
+        y_pred = y_pred | y_in
 
         # save query proposal
         # img_path = result["img_path"]

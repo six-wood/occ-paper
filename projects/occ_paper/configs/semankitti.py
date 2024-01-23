@@ -47,7 +47,7 @@ backend_args = None
 train_pipeline = [
     dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
     dict(type=LoadVoxelLabelFromFile, grid_size=[256, 256, 32], scale=scale),
-    dict(type=SemkittiRangeView),
+    # dict(type=SemkittiRangeView),
     dict(type=ApplayVisMask),
     dict(
         type=PackOccInputs,
@@ -58,8 +58,7 @@ train_pipeline = [
 test_pipeline = [
     dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
     dict(type=LoadVoxelLabelFromFile, grid_size=[256, 256, 32], scale=scale),
-    dict(type=SemkittiRangeView),
-    dict(type=ApplayVisMask),
+    # dict(type=SemkittiRangeView),
     dict(
         type=PackOccInputs,
         keys=["points", "voxel_label"],
