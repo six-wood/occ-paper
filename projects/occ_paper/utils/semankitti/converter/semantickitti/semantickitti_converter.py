@@ -208,15 +208,15 @@ def create_semantickitti_info_file(root_path, pkl_prefix, save_path, sweep=10):
 
     save_path = Path(save_path)
 
-    semantickitti_infos_train = get_semantickitti_info(root_path=root_path, split="train")
+    semantickitti_infos_train = get_semantickitti_info(root_path=root_path, split="train", sweep=sweep)
     filename = save_path / f"{pkl_prefix}_infos_train.pkl"
     print(f"SemanticKITTI info train file is saved to {filename}")
     mmengine.dump(semantickitti_infos_train, filename)
-    semantickitti_infos_val = get_semantickitti_info(root_path=root_path, split="val")
+    semantickitti_infos_val = get_semantickitti_info(root_path=root_path, split="val", sweep=sweep)
     filename = save_path / f"{pkl_prefix}_infos_val.pkl"
     print(f"SemanticKITTI info val file is saved to {filename}")
     mmengine.dump(semantickitti_infos_val, filename)
-    semantickitti_infos_test = get_semantickitti_info(root_path=root_path, split="test")
+    semantickitti_infos_test = get_semantickitti_info(root_path=root_path, split="test", sweep=sweep)
     filename = save_path / f"{pkl_prefix}_infos_test.pkl"
     print(f"SemanticKITTI info test file is saved to {filename}")
     mmengine.dump(semantickitti_infos_test, filename)

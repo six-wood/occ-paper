@@ -30,4 +30,15 @@ model = dict(
             max_voxels=(-1, -1),
         ),
     ),
+    pts_voxel_encoder=dict(
+        type="HardVFE",
+        in_channels=4,
+        feat_channels=[64, 64],
+        with_distance=False,
+        voxel_size=voxel_size,
+        with_cluster_center=True,
+        with_voxel_center=True,
+        point_cloud_range=point_cloud_range,
+        norm_cfg=dict(type="naiveSyncBN1d", eps=1e-3, momentum=0.01),
+    ),
 )
