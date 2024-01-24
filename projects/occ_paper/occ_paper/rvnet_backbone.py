@@ -155,7 +155,8 @@ class LMSCNet_SS(MVXTwoStageDetector):
         self.up_sample2_2 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=8, padding=0, stride=8, bias=False)
         self.conv_layer3 = self._make_conv_layer(d_out2 + d_out1 + d_in1 + e_out1, d_out3)
 
-        self.atten_block = self._make_conv_layer(d_out3, d_out3)
+        # self.atten_block = self._make_conv_layer(d_out3, d_out3)
+        self.atten_block = CrossChannelAttentionModule(d_out3)
 
         self.seg_head = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
 
@@ -201,7 +202,7 @@ class LMSCNet_SS(MVXTwoStageDetector):
         dec3 = torch.cat([dec3, enc1, fuse3_1, fuse3_2], dim=1)  # [bs, 48+32+64+80, 256, 256]
         dec3 = self.conv_layer3(dec3)  # [bs, 32, 256, 256]
 
-        out_2D = self.atten_block(dec3 + x)  # [bs, 32, 256, 256]
+        out_2D = self.atten_block(dec3, x)  # [bs, 32, 256, 256]
 
         out_3D = self.seg_head(out_2D)
         # Take back to [W, H, D] axis order
