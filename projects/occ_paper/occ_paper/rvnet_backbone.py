@@ -16,6 +16,42 @@ from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 from .ssc_loss import BCE_ssc_loss
 
 
+class ChannelAttentionModule(nn.Module):
+    def __init__(self, num_channels, reduction_ratio=16):
+        super(ChannelAttentionModule, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(num_channels, num_channels // reduction_ratio, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(num_channels // reduction_ratio, num_channels, bias=False),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+
+
+class CrossChannelAttentionModule(nn.Module):
+    def __init__(self, num_channels, reduction_ratio=16):
+        super(CrossChannelAttentionModule, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(num_channels, num_channels // reduction_ratio, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(num_channels // reduction_ratio, num_channels, bias=False),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x, y):
+        b, c, _, _ = x.size()
+        att = self.avg_pool(y).view(b, c)
+        att = self.fc(att).view(b, c, 1, 1)
+        return x * att.expand_as(x)
+
+
 @MODELS.register_module()
 class LMSCNet_SS(MVXTwoStageDetector):
     def __init__(
@@ -86,21 +122,40 @@ class LMSCNet_SS(MVXTwoStageDetector):
         self.class_frequencies_level1 = np.array([5.41773033e09, 4.03113667e08])
 
         self.class_weights_level_1 = torch.from_numpy(1 / np.log(self.class_frequencies_level1 + 0.001))
+        # encoder_channels
+        e_in1, e_out1 = int(f), int(f)
+        e_out2 = int(f * 1.5)
+        e_out3 = int(f * 2)
+        e_out4 = int(f * 2.5)
 
-        self.Encoder_block1 = self._make_conv_layer(f, f)
-        self.Encoder_block2 = self._make_encoder_layer(f, int(f * 1.5))
-        self.Encoder_block3 = self._make_encoder_layer(int(f * 1.5), int(f * 2))
-        self.Encoder_block4 = self._make_encoder_layer(int(f * 2), int(f * 2.5))
+        # encode block
+        self.Encoder_block1 = self._make_conv_layer(e_in1, e_out1)
+        self.Encoder_block2 = self._make_encoder_layer(e_out1, e_out2)
+        self.Encoder_block3 = self._make_encoder_layer(e_out2, e_out3)
+        self.Encoder_block4 = self._make_encoder_layer(e_out3, e_out4)
 
-        self.Decoder_block1 = self._make_decoder_layer(int(f * 2.5), int(f * 2))
-        self.Decoder_block2 = self._make_decoder_layer(int(f * 4), int(f * 1.5))
-        self.Decoder_block3 = self._make_decoder_layer(int(f * 3), f)
-        self.Decoder_block4 = self._make_conv_layer(int(f * 2), f)
+        # decoder channels
+        d_in1 = e_out4
+        d_out1 = int(f * 2)
+        d_out2 = int(f * 1.5)
+        d_out3 = int(f)
 
-        self.up_sample1 = nn.ConvTranspose2d(int(f * 2), int(f * 2), kernel_size=4, padding=0, stride=4, bias=False)
-        self.up_sample2 = nn.ConvTranspose2d(int(f * 1.5), int(f * 1.5), kernel_size=6, padding=2, stride=2, bias=False)
+        # decode block 1
+        self.up_sample1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=2, padding=0, stride=2, bias=False)
+        self.conv_layer1 = self._make_conv_layer(d_in1 + e_out3, d_out1)
 
-        self.fuse_block = self._make_fuse_layer(int(f * 2) + int(f * 1.5) + int(f) + int(f), f)
+        # decode block 2
+        self.up_sample2 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=2, padding=0, stride=2, bias=False)
+        self.up_sample2_1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=4, padding=0, stride=4, bias=False)
+        self.conv_layer2 = self._make_conv_layer(d_out1 + d_in1 + e_out2, int(f * 1.5))
+
+        # decode block 3
+        self.up_sample3 = nn.ConvTranspose2d(d_out2, d_out2, kernel_size=2, padding=0, stride=2, bias=False)
+        self.up_sample3_1 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=4, padding=0, stride=4, bias=False)
+        self.up_sample2_2 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=8, padding=0, stride=8, bias=False)
+        self.conv_layer3 = self._make_conv_layer(d_out2 + d_out1 + d_in1 + e_out1, d_out3)
+
+        self.atten_block = self._make_conv_layer(d_out3, d_out3)
 
         self.seg_head = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
 
@@ -121,40 +176,32 @@ class LMSCNet_SS(MVXTwoStageDetector):
             build_activation_layer(self.act_cfg),
         )
 
-    def _make_decoder_layer(self, in_channels, out_channels):
-        return nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2, bias=False),
-            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            build_activation_layer(self.act_cfg),
-            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            build_activation_layer(self.act_cfg),
-        )
-
-    def _make_fuse_layer(self, in_channels, out_channels):
-        return nn.Sequential(
-            build_conv_layer(self.conv_cfg, in_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            build_activation_layer(self.act_cfg),
-        )
-
     def step(self, x):
         # Encoder
         enc1 = self.Encoder_block1(x)  # [bs, 32, 256, 256]
         enc2 = self.Encoder_block2(enc1)  # [bs, 48, 128, 128]
         enc3 = self.Encoder_block3(enc2)  # [bs, 64, 64, 64]
-        enc4 = self.Encoder_block4(enc3)  # [bs, 80, 32, 32]
+        mec0 = self.Encoder_block4(enc3)  # [bs, 80, 32, 32]
 
-        # Decoder modify
-        dec1 = self.Decoder_block1(enc4)  # [bs, 64, 64, 64]
-        dec2 = self.Decoder_block2(torch.cat([dec1, enc3], dim=1))  # [bs, 48, 128, 128]
-        dec3 = self.Decoder_block3(torch.cat([dec2, enc2], dim=1))  # [bs, 32, 256, 256]
-        dec4 = self.Decoder_block4(torch.cat([dec3, enc1], dim=1))  # [bs, 32, 256, 256]
+        # Decoder1 out_1/4
+        dec1 = self.up_sample1(mec0)  # [bs, 80, 64, 64]
+        dec1 = torch.cat([dec1, enc3], dim=1)  # [bs, 80+64, 64, 64]
+        dec1 = self.conv_layer1(dec1)  # [bs, 64, 64, 64]
 
-        fuse1 = self.up_sample1(dec1)  # [bs, 64, 256, 256]
-        fuse2 = self.up_sample2(dec2)  # [bs, 48, 256, 256]
-        fuse = torch.cat([fuse1, fuse2, dec3, dec4], dim=1)  # [bs, 32+48+64+80, 256, 256]
-        out_2D = self.fuse_block(fuse)  # [bs, 32, 256, 256]
+        # Decoder2 out_1/2
+        dec2 = self.up_sample2(dec1)  # [bs, 64, 128, 128]
+        fuse2_1 = self.up_sample2_1(mec0)  # [bs, 80, 128, 128]
+        dec2 = torch.cat([dec2, enc2, fuse2_1], dim=1)  # [bs, 64+48+80, 128, 128]
+        dec2 = self.conv_layer2(dec2)  # [bs, 48, 128, 128]
 
-        # out_2D = out_2D + x
+        # Decoder3 out_1
+        dec3 = self.up_sample3(dec2)  # [bs, 48, 256, 256]
+        fuse3_1 = self.up_sample3_1(dec1)  # [bs, 64, 256, 256]
+        fuse3_2 = self.up_sample2_2(mec0)  # [bs, 80, 256, 256]
+        dec3 = torch.cat([dec3, enc1, fuse3_1, fuse3_2], dim=1)  # [bs, 48+32+64+80, 256, 256]
+        dec3 = self.conv_layer3(dec3)  # [bs, 32, 256, 256]
+
+        out_2D = self.atten_block(dec3 + x)  # [bs, 32, 256, 256]
 
         out_3D = self.seg_head(out_2D)
         # Take back to [W, H, D] axis order
