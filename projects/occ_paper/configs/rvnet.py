@@ -1,8 +1,8 @@
 from projects.occ_paper.occ_paper.rvnet_backbone import LMSCNet_SS
-from projects.occ_paper.occ_paper.hungarian_assigner_3d import HungarianAssigner3D
-from projects.occ_paper.occ_paper.match_cost import FocalLossCost, BBox3DL1Cost, IoUCost
 from mmdet3d.models.data_preprocessors import Det3DDataPreprocessor
+from mmdet3d.models.voxel_encoders.pillar_encoder import DynamicPillarFeatureNet
 from mmengine.config import read_base
+import torch.nn as nn
 
 with read_base():
     from .share_paramenter import *
@@ -13,7 +13,7 @@ _alpha_ = 0.54
 model = dict(
     type=LMSCNet_SS,
     class_num=2,
-    input_dimensions=[256, 32, 256],
+    input_dimensions=input_demiensions,
     out_scale=scale,
     gamma=_gamma_,
     alpha=_alpha_,
@@ -29,16 +29,5 @@ model = dict(
             voxel_size=voxel_size,
             max_voxels=(-1, -1),
         ),
-    ),
-    pts_voxel_encoder=dict(
-        type="HardVFE",
-        in_channels=4,
-        feat_channels=[64, 64],
-        with_distance=False,
-        voxel_size=voxel_size,
-        with_cluster_center=True,
-        with_voxel_center=True,
-        point_cloud_range=point_cloud_range,
-        norm_cfg=dict(type="naiveSyncBN1d", eps=1e-3, momentum=0.01),
     ),
 )

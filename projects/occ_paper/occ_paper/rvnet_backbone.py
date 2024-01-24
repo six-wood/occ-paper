@@ -64,9 +64,8 @@ class LMSCNet_SS(MVXTwoStageDetector):
         self.nbr_classes = class_num
         self.gamma = gamma
         self.alpha = alpha
-        self.input_dimensions = input_dimensions  # Grid dimensions should be (W, H, D).. z or height being axis 1
+        self.input_dimensions = f = input_dimensions  # Grid dimensions should be (W, H, D).. z or height being axis 1
         self.ignore_index = ignore_index
-        f = self.input_dimensions[1]  # Height of the input grid, H to channels
 
         self.pool = nn.MaxPool2d(2)  # [F=2; S=2; P=0; D=1]
 
@@ -82,29 +81,9 @@ class LMSCNet_SS(MVXTwoStageDetector):
             nn.ReLU(),
         )
 
-        self.Encoder_block2 = nn.Sequential(
-            nn.MaxPool2d(2),  # 1->0.5
-            nn.Conv2d(f, int(f * 1.5), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(int(f * 1.5), int(f * 1.5), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-        )
-
-        self.Encoder_block3 = nn.Sequential(
-            nn.MaxPool2d(2),  # 0.5->0.25
-            nn.Conv2d(int(f * 1.5), int(f * 2), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(int(f * 2), int(f * 2), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-        )
-
-        self.Encoder_block4 = nn.Sequential(
-            nn.MaxPool2d(2),  # 0.25->0.125
-            nn.Conv2d(int(f * 2), int(f * 2.5), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(int(f * 2.5), int(f * 2.5), kernel_size=3, padding=1, stride=1),
-            nn.ReLU(),
-        )
+        self.Encoder_block2 = self._make_encoder_block(f, int(f * 1.5))
+        self.Encoder_block3 = self._make_encoder_block(int(f * 1.5), int(f * 2))
+        self.Encoder_block4 = self._make_encoder_block(int(f * 2), int(f * 2.5))
 
         # Treatment output 1:8
         self.conv_out_scale_1_8 = nn.Conv2d(int(f * 2.5), int(f / 8), kernel_size=3, padding=1, stride=1)  # channel->H/8
@@ -152,6 +131,15 @@ class LMSCNet_SS(MVXTwoStageDetector):
         elif self.out_scale == "1_8":
             self.seg_head_1_8 = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
 
+    def _make_encoder_block(self, inplanes, planes):
+        return nn.Sequential(
+            nn.MaxPool2d(2),  # 1->0.5
+            nn.Conv2d(inplanes, planes, kernel_size=3, padding=1, stride=1),
+            nn.ReLU(),
+            nn.Conv2d(planes, planes, kernel_size=3, padding=1, stride=1),
+            nn.ReLU(),
+        )
+
     def step(self, input):
         # input = x['3D_OCCUPANCY']  # Input to LMSCNet model is 3D occupancy big scale (1:1) [bs, 1, W, H, D]
         # input = torch.squeeze(input, dim=1).permute(0, 2, 1, 3)  # Reshaping to the right way for 2D convs [bs, H, W, D]
@@ -169,77 +157,59 @@ class LMSCNet_SS(MVXTwoStageDetector):
         # print('_skip_1_8.shape', _skip_1_8.shape)  # [1, 80, 32, 32]
 
         # Out 1_8
-        out_scale_1_8__2D = self.conv_out_scale_1_8(_skip_1_8)
+        out_scale_1_8__2D = self.conv_out_scale_1_8(_skip_1_8)  # [1, 4, 32, 32]
+        # if self.out_scale == "1_2":
+        #     # Out 1_4
+        #     out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
+        #     out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
+        #     out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
+        #     out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
 
-        # print('out_scale_1_8__2D.shape', out_scale_1_8__2D.shape)  # [1, 4, 32, 32]
+        #     # Out 1_2
+        #     out = self.deconv1_4(out_scale_1_4__2D)  # [1, 8, 128, 128]
+        #     out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)  # [1, 60, 128, 128]
+        #     out = F.relu(self.conv1_2(out))  # torch.Size([1, 60, 128, 128])
+        #     out_scale_1_2__2D = self.conv_out_scale_1_2(out)  # torch.Size([1, 16, 128, 128])
 
-        if self.out_scale == "1_8":
-            out_scale_1_8__3D = self.seg_head_1_8(out_scale_1_8__2D)  # [1, 20, 16, 128, 128]
-            out_scale_1_8__3D = out_scale_1_8__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
-            return out_scale_1_8__3D
+        #     out_scale_1_2__3D = self.seg_head_1_2(out_scale_1_2__2D)  # [1, 20, 16, 128, 128]
+        #     out_scale_1_2__3D = out_scale_1_2__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
+        #     return out_scale_1_2__3D
 
-        elif self.out_scale == "1_4":
-            # Out 1_4
-            out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
-            out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
-            out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
-            out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
+        # if self.out_scale == "1_1":
+        # basic:up_sample->cat->conv->relu->conv
+        # Out 1_4
+        out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
+        # print("out.shape", out.shape)  # [1, 4, 64, 64]
+        out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
+        out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
+        out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
+        # print('out_scale_1_4__2D.shape', out_scale_1_4__2D.shape)  # [1, 8, 64, 64]
 
-            out_scale_1_4__3D = self.seg_head_1_4(out_scale_1_4__2D)  # [1, 20, 16, 128, 128]
-            out_scale_1_4__3D = out_scale_1_4__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
-            return out_scale_1_4__3D
+        # Out 1_2
+        out = self.deconv1_4(out_scale_1_4__2D)  # [1, 8, 128, 128]
+        # print("out.shape", out.shape)  # [1, 8, 128, 128]
+        out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)  # [1, 48+8+4, 128, 128]
+        out = F.relu(self.conv1_2(out))  # torch.Size([1, 60, 128, 128])
+        out_scale_1_2__2D = self.conv_out_scale_1_2(out)  # torch.Size([1, 16, 128, 128])
+        # print('out_scale_1_2__2D.shape', out_scale_1_2__2D.shape)  # [1, 16, 128, 128]
 
-        elif self.out_scale == "1_2":
-            # Out 1_4
-            out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
-            out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
-            out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
-            out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
+        # Out 1_1
+        out = self.deconv1_2(out_scale_1_2__2D)  # [1, 16, 256, 256]
+        out = torch.cat(
+            (
+                out,
+                _skip_1_1,
+                self.deconv_1_4__1_1(out_scale_1_4__2D),
+                self.deconv_1_8__1_1(out_scale_1_8__2D),
+            ),
+            1,
+        )  # [1, 32+16+8+4, 256, 256]
+        out_scale_1_1__2D = F.relu(self.conv1_1(out) + input)  # [bs, 32, 256, 256]
 
-            # Out 1_2
-            out = self.deconv1_4(out_scale_1_4__2D)  # [1, 8, 128, 128]
-            out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)  # [1, 60, 128, 128]
-            out = F.relu(self.conv1_2(out))  # torch.Size([1, 60, 128, 128])
-            out_scale_1_2__2D = self.conv_out_scale_1_2(out)  # torch.Size([1, 16, 128, 128])
-
-            out_scale_1_2__3D = self.seg_head_1_2(out_scale_1_2__2D)  # [1, 20, 16, 128, 128]
-            out_scale_1_2__3D = out_scale_1_2__3D.permute(0, 1, 3, 4, 2)  # [1, 20, 128, 128, 16]
-            return out_scale_1_2__3D
-
-        elif self.out_scale == "1_1":
-            # Out 1_4
-            out = self.deconv1_8(out_scale_1_8__2D)  # [1, 4, 64, 64]
-            # print("out.shape", out.shape)  # [1, 4, 64, 64]
-            out = torch.cat((out, _skip_1_4), 1)  # [1, 68, 64, 64]
-            out = F.relu(self.conv1_4(out))  # [1, 68, 64, 64]
-            out_scale_1_4__2D = self.conv_out_scale_1_4(out)  # [1, 8, 64, 64]
-            # print('out_scale_1_4__2D.shape', out_scale_1_4__2D.shape)  # [1, 8, 64, 64]
-
-            # Out 1_2
-            out = self.deconv1_4(out_scale_1_4__2D)  # [1, 8, 128, 128]
-            # print("out.shape", out.shape)  # [1, 8, 128, 128]
-            out = torch.cat((out, _skip_1_2, self.deconv_1_8__1_2(out_scale_1_8__2D)), 1)  # [1, 48+8+4, 128, 128]
-            out = F.relu(self.conv1_2(out))  # torch.Size([1, 60, 128, 128])
-            out_scale_1_2__2D = self.conv_out_scale_1_2(out)  # torch.Size([1, 16, 128, 128])
-            # print('out_scale_1_2__2D.shape', out_scale_1_2__2D.shape)  # [1, 16, 128, 128]
-
-            # Out 1_1
-            out = self.deconv1_2(out_scale_1_2__2D)  # [1, 16, 256, 256]
-            out = torch.cat(
-                (
-                    out,
-                    _skip_1_1,
-                    self.deconv_1_4__1_1(out_scale_1_4__2D),
-                    self.deconv_1_8__1_1(out_scale_1_8__2D),
-                ),
-                1,
-            )  # [1, 32+16+8+4, 256, 256]
-            out_scale_1_1__2D = F.relu(self.conv1_1(out) + input)  # [bs, 32, 256, 256]
-
-            out_scale_1_1__3D = self.seg_head_1_1(out_scale_1_1__2D)
-            # Take back to [W, H, D] axis order
-            out_scale_1_1__3D = out_scale_1_1__3D.permute(0, 1, 3, 4, 2)  # [bs, C, H, W, D] -> [bs, C, W, H, D]
-            return out_scale_1_1__3D
+        out_scale_1_1__3D = self.seg_head_1_1(out_scale_1_1__2D)
+        # Take back to [W, H, D] axis order
+        out_scale_1_1__3D = out_scale_1_1__3D.permute(0, 1, 3, 4, 2)  # [bs, C, H, W, D] -> [bs, C, W, H, D]
+        return out_scale_1_1__3D
 
     def pack(self, array):
         """convert a boolean array into a bitwise array."""
