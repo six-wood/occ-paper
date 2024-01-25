@@ -143,20 +143,22 @@ class LMSCNet_SS(MVXTwoStageDetector):
         # decode block 1
         self.up_sample1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=2, padding=0, stride=2, bias=False)
         self.conv_layer1 = self._make_conv_layer(d_in1 + e_out3, d_out1)
+        self.atten_block1 = CrossChannelAttentionModule(d_out1)
 
         # decode block 2
         self.up_sample2 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=2, padding=0, stride=2, bias=False)
         self.up_sample2_1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=4, padding=0, stride=4, bias=False)
         self.conv_layer2 = self._make_conv_layer(d_out1 + d_in1 + e_out2, int(f * 1.5))
+        self.atten_block2 = CrossChannelAttentionModule(int(f * 1.5))
 
         # decode block 3
         self.up_sample3 = nn.ConvTranspose2d(d_out2, d_out2, kernel_size=2, padding=0, stride=2, bias=False)
         self.up_sample3_1 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=4, padding=0, stride=4, bias=False)
-        self.up_sample2_2 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=8, padding=0, stride=8, bias=False)
+        self.up_sample3_2 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=8, padding=0, stride=8, bias=False)
         self.conv_layer3 = self._make_conv_layer(d_out2 + d_out1 + d_in1 + e_out1, d_out3)
+        self.atten_block3 = CrossChannelAttentionModule(d_out3)
 
         # self.atten_block = self._make_conv_layer(d_out3, d_out3)
-        self.atten_block = CrossChannelAttentionModule(d_out3)
 
         self.seg_head = SegmentationHead(1, 8, self.nbr_classes, [1, 2, 3])
 
@@ -188,21 +190,22 @@ class LMSCNet_SS(MVXTwoStageDetector):
         dec1 = self.up_sample1(mec0)  # [bs, 80, 64, 64]
         dec1 = torch.cat([dec1, enc3], dim=1)  # [bs, 80+64, 64, 64]
         dec1 = self.conv_layer1(dec1)  # [bs, 64, 64, 64]
+        # dec1 = self.atten_block1(dec1, enc3)  # [bs, 64, 64, 64]
 
         # Decoder2 out_1/2
         dec2 = self.up_sample2(dec1)  # [bs, 64, 128, 128]
         fuse2_1 = self.up_sample2_1(mec0)  # [bs, 80, 128, 128]
         dec2 = torch.cat([dec2, enc2, fuse2_1], dim=1)  # [bs, 64+48+80, 128, 128]
         dec2 = self.conv_layer2(dec2)  # [bs, 48, 128, 128]
+        # dec2 = self.atten_block2(dec2, enc2)  # [bs, 48, 128, 128]
 
         # Decoder3 out_1
         dec3 = self.up_sample3(dec2)  # [bs, 48, 256, 256]
         fuse3_1 = self.up_sample3_1(dec1)  # [bs, 64, 256, 256]
-        fuse3_2 = self.up_sample2_2(mec0)  # [bs, 80, 256, 256]
+        fuse3_2 = self.up_sample3_2(mec0)  # [bs, 80, 256, 256]
         dec3 = torch.cat([dec3, enc1, fuse3_1, fuse3_2], dim=1)  # [bs, 48+32+64+80, 256, 256]
         dec3 = self.conv_layer3(dec3)  # [bs, 32, 256, 256]
-
-        out_2D = self.atten_block(dec3, x)  # [bs, 32, 256, 256]
+        out_2D = self.atten_block3(dec3, x)  # [bs, 32, 256, 256]
 
         out_3D = self.seg_head(out_2D)
         # Take back to [W, H, D] axis order
@@ -268,8 +271,6 @@ class LMSCNet_SS(MVXTwoStageDetector):
         sc_pred = self.step(bev_map.permute(0, 3, 1, 2).to(target.device))
         y_pred = sc_pred.detach().cpu().numpy()  # [1, 20, 128, 128, 16]
         y_pred = np.argmax(y_pred, axis=1).astype(np.uint8)
-        y_in = bev_map.detach().cpu().numpy().astype(np.uint8)
-        y_pred = y_pred | y_in
 
         # save query proposal
         # img_path = result["img_path"]

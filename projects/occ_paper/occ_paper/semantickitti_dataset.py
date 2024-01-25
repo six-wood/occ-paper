@@ -24,6 +24,7 @@ from mmengine.dataset.utils import BaseDataElement
 class SemanticKittiSC(SemanticKittiDataset):
     METAINFO = {
         "classes": (
+            "free",
             "car",
             "bicycle",
             "motorcycle",
@@ -44,9 +45,9 @@ class SemanticKittiSC(SemanticKittiDataset):
             "pole",
             "traffic-sign",
             "occupied",
-            "free",
         ),
         "palette": [
+            [0, 0, 0],
             [100, 150, 245],
             [100, 230, 245],
             [30, 60, 150],
@@ -67,7 +68,6 @@ class SemanticKittiSC(SemanticKittiDataset):
             [255, 240, 150],
             [255, 0, 0],
             [255, 255, 255],
-            [0, 0, 0],
         ],
         "seg_valid_class_ids": tuple(range(21)),
         "seg_all_class_ids": tuple(range(21)),
