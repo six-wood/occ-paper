@@ -10,6 +10,8 @@ class SscHead(nn.Module):
     Formed by Dim expansion, Conv3D, ASPP block, Conv3D.
     """
 
+    # TODO ADD SCPNet completion Head
+
     def __init__(self, inplanes, planes, nbr_classes, dilations_conv_list):
         super().__init__()
 

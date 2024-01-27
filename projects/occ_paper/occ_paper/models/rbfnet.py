@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 import torch
 import numpy as np
 from torch import Tensor
@@ -26,7 +26,7 @@ class CrossChannelAttentionModule(BaseModule):
             nn.Sigmoid(),
         )
 
-    def forward(self, x, y):
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         b, c, _, _ = x.size()
         att = self.avg_pool(y).view(b, c)
         att = self.fc(att).view(b, c, 1, 1)
@@ -93,7 +93,11 @@ class BasicBlock(BaseModule):
 class BEVNet(BaseModule):
     def __init__(
         self,
-        input_dimensions=None,
+        bev_input_dimensions=32,
+        bev_stem_channels: int = 32,
+        bev_num_stages: int = 3,
+        bev_encoder_out_channels: Sequence[int] = (48, 64, 80),
+        bev_decoder_out_channels: Sequence[int] = (64, 48, 32),
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
         act_cfg: ConfigType = dict(type="ReLU"),
@@ -103,29 +107,31 @@ class BEVNet(BaseModule):
         SSCNet architecture
         :param N: number of classes to be predicted (i.e. 12 for NYUv2)
         """
-
+        assert len(bev_encoder_out_channels) == len(bev_decoder_out_channels) == bev_num_stages, (
+            "The length of encoder_out_channels, decoder_out_channels " "should be equal to num_stages"
+        )
         # model parameters
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
-        f = input_dimensions
+        f = bev_input_dimensions
         # encoder_channels
-        e_in1, e_out1 = int(f), int(f)
-        e_out2 = int(f * 1.5)
-        e_out3 = int(f * 2)
-        e_out4 = int(f * 2.5)
+        in_channel, stem_out = bev_input_dimensions, bev_stem_channels
+        e_out2 = bev_encoder_out_channels[0]
+        e_out3 = bev_encoder_out_channels[1]
+        e_out4 = bev_encoder_out_channels[2]
 
         # encode block
-        self.Encoder_block1 = self._make_conv_layer(e_in1, e_out1)
-        self.Encoder_block2 = self._make_encoder_layer(e_out1, e_out2)
-        self.Encoder_block3 = self._make_encoder_layer(e_out2, e_out3)
-        self.Encoder_block4 = self._make_encoder_layer(e_out3, e_out4)
+        self.stem = self._make_conv_layer(in_channel, stem_out)
+        self.Encoder_block1 = self._make_encoder_layer(stem_out, e_out2)
+        self.Encoder_block2 = self._make_encoder_layer(e_out2, e_out3)
+        self.Encoder_block3 = self._make_encoder_layer(e_out3, e_out4)
 
         # decoder channels
         d_in1 = e_out4
-        d_out1 = int(f * 2)
-        d_out2 = int(f * 1.5)
-        d_out3 = int(f)
+        d_out1 = bev_decoder_out_channels[0]
+        d_out2 = bev_decoder_out_channels[1]
+        d_out3 = bev_decoder_out_channels[2]
 
         # decode block 1
         self.up_sample1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=2, padding=0, stride=2, bias=False)
@@ -142,7 +148,7 @@ class BEVNet(BaseModule):
         self.up_sample3 = nn.ConvTranspose2d(d_out2, d_out2, kernel_size=2, padding=0, stride=2, bias=False)
         self.up_sample3_1 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=4, padding=0, stride=4, bias=False)
         self.up_sample3_2 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=8, padding=0, stride=8, bias=False)
-        self.conv_layer3 = self._make_conv_layer(d_out2 + d_out1 + d_in1 + e_out1, d_out3)
+        self.conv_layer3 = self._make_conv_layer(d_out2 + d_out1 + d_in1 + stem_out, d_out3)
         self.atten_block3 = CrossChannelAttentionModule(d_out3)
 
     def _make_conv_layer(self, in_channels: int, out_channels: int) -> None:  # two conv blocks in beginning
@@ -164,23 +170,23 @@ class BEVNet(BaseModule):
 
     def forward(self, x):
         # Encoder
-        enc1 = self.Encoder_block1(x)  # [bs, 32, 256, 256]
-        enc2 = self.Encoder_block2(enc1)  # [bs, 48, 128, 128]
-        enc3 = self.Encoder_block3(enc2)  # [bs, 64, 64, 64]
-        mec0 = self.Encoder_block4(enc3)  # [bs, 80, 32, 32]
+        enc1 = self.stem(x)  # [bs, 32, 256, 256]
+        enc2 = self.Encoder_block1(enc1)  # [bs, 48, 128, 128]
+        enc3 = self.Encoder_block2(enc2)  # [bs, 64, 64, 64]
+        mec0 = self.Encoder_block3(enc3)  # [bs, 80, 32, 32]
 
         # Decoder1 out_1/4
         dec1 = self.up_sample1(mec0)  # [bs, 80, 64, 64]
         dec1 = torch.cat([dec1, enc3], dim=1)  # [bs, 80+64, 64, 64]
         dec1 = self.conv_layer1(dec1)  # [bs, 64, 64, 64]
-        dec1 = self.atten_block1(dec1, enc3)  # [bs, 64, 64, 64]
+        # dec1 = self.atten_block1(dec1, enc3)  # [bs, 64, 64, 64]
 
         # Decoder2 out_1/2
         dec2 = self.up_sample2(dec1)  # [bs, 64, 128, 128]
         fuse2_1 = self.up_sample2_1(mec0)  # [bs, 80, 128, 128]
         dec2 = torch.cat([dec2, enc2, fuse2_1], dim=1)  # [bs, 64+48+80, 128, 128]
         dec2 = self.conv_layer2(dec2)  # [bs, 48, 128, 128]
-        dec2 = self.atten_block2(dec2, enc2)  # [bs, 48, 128, 128]
+        # dec2 = self.atten_block2(dec2, enc2)  # [bs, 48, 128, 128]
 
         # Decoder3 out_1
         dec3 = self.up_sample3(dec2)  # [bs, 48, 256, 256]
@@ -311,13 +317,154 @@ class RangeNet(BaseModule):
             outs.append(x)
 
         # TODO: move the following operation into neck.
+        rpn_outs = []
         for i in range(len(outs)):
             if outs[i].shape != outs[0].shape:
-                outs[i] = F.interpolate(outs[i], size=outs[0].size()[2:], mode="bilinear", align_corners=True)  # interpolate to match the dimensions
+                rpn_outs.append(
+                    F.interpolate(outs[i], size=outs[0].size()[2:], mode="bilinear", align_corners=True)
+                )  # interpolate to match the dimensions
+            else:
+                rpn_outs.append(outs[i])
 
-        outs[0] = torch.cat(outs, dim=1)  # concatenate the outputs of the residual blocks
+        outs[0] = torch.cat(rpn_outs, dim=1)  # concatenate the outputs of the residual blocks
 
         for layer_name in self.fuse_layers:
             fuse_layer = getattr(self, layer_name)
             outs[0] = fuse_layer(outs[0])
         return tuple(outs)
+
+
+@MODELS.register_module()
+class RBFNet(BaseModule):
+    def __init__(
+        self,
+        bev_input_dimensions=32,
+        bev_stem_channels: int = 32,
+        bev_num_stages: int = 3,
+        bev_encoder_out_channels: Sequence[int] = (48, 64, 80),
+        bev_decoder_out_channels: Sequence[int] = (8, 16, 32),
+        range_in_channels: int = 5,
+        range_stem_channels: int = 64,
+        range_num_stages: int = 3,
+        range_stage_blocks: Sequence[int] = (2, 2, 2),
+        range_out_channels: Sequence[int] = (64, 64, 64),
+        range_strides: Sequence[int] = (2, 2, 2),
+        range_dilations: Sequence[int] = (1, 1, 1),
+        range_fuse_channels: Sequence[int] = (64, 16),
+        conv_cfg: OptConfigType = None,
+        norm_cfg: ConfigType = dict(type="BN"),
+        act_cfg: ConfigType = dict(type="ReLU"),
+    ):
+        super().__init__()
+        """
+        SSCNet architecture
+        :param N: number of classes to be predicted (i.e. 12 for NYUv2)
+        """
+        assert len(bev_encoder_out_channels) == len(bev_decoder_out_channels) == bev_num_stages, (
+            "The length of encoder_out_channels, decoder_out_channels " "should be equal to num_stages"
+        )
+        self.range_net = RangeNet(
+            in_channels=range_in_channels,
+            stem_channels=range_stem_channels,
+            num_stages=range_num_stages,
+            stage_blocks=range_stage_blocks,
+            out_channels=range_out_channels,
+            strides=range_strides,
+            dilations=range_dilations,
+            fuse_channels=range_fuse_channels,
+            conv_cfg=conv_cfg,
+            norm_cfg=norm_cfg,
+            act_cfg=act_cfg,
+        )
+        # input downsample
+
+        # model parameters
+        self.conv_cfg = conv_cfg
+        self.norm_cfg = norm_cfg
+        self.act_cfg = act_cfg
+        f = bev_input_dimensions
+        # encoder_channels
+        in_channel, stem_out = bev_input_dimensions, bev_stem_channels
+        e_out2 = bev_encoder_out_channels[0]
+        e_out3 = bev_encoder_out_channels[1]
+        e_out4 = bev_encoder_out_channels[2]
+
+        # encode block
+        self.stem = self._make_conv_layer(in_channel, stem_out)
+        self.Encoder_block1 = self._make_encoder_layer(stem_out, e_out2)
+        self.Encoder_block2 = self._make_encoder_layer(e_out2, e_out3)
+        self.Encoder_block3 = self._make_encoder_layer(e_out3, e_out4)
+
+        # decoder channels
+        d_in1 = e_out4
+        d_out1 = bev_decoder_out_channels[0]
+        d_out2 = bev_decoder_out_channels[1]
+        d_out3 = bev_decoder_out_channels[2]
+
+        # decode block 1
+        self.up_sample1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=2, padding=0, stride=2, bias=False)
+        self.conv_layer1 = self._make_conv_layer(d_in1 + e_out3, d_out1)
+        self.atten_block1 = CrossChannelAttentionModule(d_out1)
+
+        # decode block 2
+        self.up_sample2 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=2, padding=0, stride=2, bias=False)
+        self.up_sample2_1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=4, padding=0, stride=4, bias=False)
+        self.conv_layer2 = self._make_conv_layer(d_out1 + d_in1 + e_out2, d_out2)
+        self.atten_block2 = CrossChannelAttentionModule(int(f * 1.5))
+
+        # decode block 3
+        self.up_sample3 = nn.ConvTranspose2d(d_out2, d_out2, kernel_size=2, padding=0, stride=2, bias=False)
+        self.up_sample3_1 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=4, padding=0, stride=4, bias=False)
+        self.up_sample3_2 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=8, padding=0, stride=8, bias=False)
+        self.conv_layer3 = self._make_conv_layer(d_out2 + d_out1 + d_in1 + stem_out, d_out3)
+        self.atten_block3 = CrossChannelAttentionModule(d_out3)
+
+    def _make_conv_layer(self, in_channels: int, out_channels: int) -> None:  # two conv blocks in beginning
+        return nn.Sequential(
+            build_conv_layer(self.conv_cfg, in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
+            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
+        )
+
+    def _make_encoder_layer(self, in_channels: int, out_channels: int) -> None:  # create encoder blocks
+        return nn.Sequential(
+            nn.MaxPool2d(2),
+            build_conv_layer(self.conv_cfg, in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
+            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_activation_layer(self.act_cfg),
+        )
+
+    def forward(self, bev_map: Tensor = None, range_map: Tensor = None, coors: Tensor = None, proj: Tensor = None):
+        # range fea
+        # range_fea = self.range_net(range_map)
+        # TODO add range->bev transform
+        # Encoder
+        enc1 = self.stem(bev_map)  # [bs, 32, 256, 256]
+        enc2 = self.Encoder_block1(enc1)  # [bs, 48, 128, 128]
+        enc3 = self.Encoder_block2(enc2)  # [bs, 64, 64, 64]
+        mec0 = self.Encoder_block3(enc3)  # [bs, 80, 32, 32]
+
+        # Decoder1 out_1/4
+        dec1 = self.up_sample1(mec0)  # [bs, 80, 64, 64]
+        dec1 = torch.cat([dec1, enc3], dim=1)  # [bs, 80+64, 64, 64]
+        dec1 = self.conv_layer1(dec1)  # [bs, 64, 64, 64]
+        # dec1 = self.atten_block1(dec1, enc3)  # [bs, 64, 64, 64]
+
+        # Decoder2 out_1/2
+        dec2 = self.up_sample2(dec1)  # [bs, 64, 128, 128]
+        fuse2_1 = self.up_sample2_1(mec0)  # [bs, 80, 128, 128]
+        dec2 = torch.cat([dec2, enc2, fuse2_1], dim=1)  # [bs, 64+48+80, 128, 128]
+        dec2 = self.conv_layer2(dec2)  # [bs, 48, 128, 128]
+        # dec2 = self.atten_block2(dec2, enc2)  # [bs, 48, 128, 128]
+
+        # Decoder3 out_1
+        dec3 = self.up_sample3(dec2)  # [bs, 48, 256, 256]
+        fuse3_1 = self.up_sample3_1(dec1)  # [bs, 64, 256, 256]
+        fuse3_2 = self.up_sample3_2(mec0)  # [bs, 80, 256, 256]
+        dec3 = torch.cat([dec3, enc1, fuse3_1, fuse3_2], dim=1)  # [bs, 48+32+64+80, 256, 256]
+        dec3 = self.conv_layer3(dec3)  # [bs, 32, 256, 256]
+        out_2D = self.atten_block3(dec3, bev_map)  # [bs, 32, 256, 256]
+
+        return out_2D

@@ -21,7 +21,7 @@ visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="vi
 
 # checkpoint_config = None
 checkpoint_config = dict(interval=1)
-train_cfg = dict(type=EpochBasedTrainLoop, max_epochs=40, val_interval=1)
+train_cfg = dict(type=EpochBasedTrainLoop, max_epochs=24, val_interval=1)
 
 # model settings
 model.update(

@@ -102,14 +102,10 @@ class SemkittiRangeView(BaseTransform):
         pitch = np.arcsin(points_numpy[:, 2] / depth)
 
         # filter based on angles
-        fov_filter = np.logical_and(
+        fov_in = np.logical_and(
             np.logical_and((pitch < self.fov_up), (pitch > self.fov_down)),
             np.logical_and((yaw < self.fov_right), (yaw > self.fov_left)),
         )
-        depth = depth[fov_filter]
-        yaw = yaw[fov_filter]
-        pitch = pitch[fov_filter]
-        points_numpy = points_numpy[fov_filter]
 
         # get projection in image coords
         proj_x = (yaw + abs(self.fov_left)) / self.fov_x
@@ -128,9 +124,17 @@ class SemkittiRangeView(BaseTransform):
         proj_y = np.minimum(self.H - 1, proj_y)
         proj_y = np.maximum(0, proj_y).astype(np.int64)
 
+        proj_x[~fov_in] = -1
+        proj_y[~fov_in] = -1
+        depth[~fov_in] = -1
+
         results["proj_x"] = proj_x
         results["proj_y"] = proj_y
         results["unproj_range"] = depth
+
+        proj_x = proj_x[fov_in]
+        proj_y = proj_y[fov_in]
+        depth = depth[fov_in]
 
         # order in decreasing depth
         indices = np.arange(depth.shape[0])
@@ -143,7 +147,7 @@ class SemkittiRangeView(BaseTransform):
 
         proj_image = (proj_image - self.means[None, None, :]) / self.stds[None, None, :]
         proj_image = proj_image * proj_mask[..., None].astype(np.float32)
-        results["img"] = proj_image
+        results["range_img"] = proj_image
 
         if "pts_semantic_mask" in results:
             proj_sem_label = np.full((self.H, self.W), self.ignore_index, dtype=np.int64)

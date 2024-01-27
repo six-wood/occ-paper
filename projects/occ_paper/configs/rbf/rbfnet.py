@@ -1,9 +1,9 @@
 import torch.nn as nn
-from projects.occ_paper.occ_paper.models.rbfnet import BEVNet
+from projects.occ_paper.occ_paper.models.rbfnet import RBFNet
 from projects.occ_paper.occ_paper.models.ssc_net import SscNet
 from projects.occ_paper.occ_paper.models.ssc_head import SscHead
 from projects.occ_paper.occ_paper.models.ssc_loss import BECLoss
-from mmdet3d.models.data_preprocessors import Det3DDataPreprocessor
+from projects.occ_paper.occ_paper.data_preprocessor import SccDataPreprocessor
 from mmengine.config import read_base
 
 with read_base():
@@ -12,7 +12,7 @@ with read_base():
 model = dict(
     type=SscNet,
     data_preprocessor=dict(
-        type=Det3DDataPreprocessor,
+        type=SccDataPreprocessor,
         voxel=True,
         voxel_type="dynamic",
         voxel_layer=dict(
@@ -23,8 +23,7 @@ model = dict(
         ),
     ),
     pts_backbone=dict(
-        type=BEVNet,
-        input_dimensions=32,
+        type=RBFNet,
     ),
     pts_scc_head=dict(
         type=SscHead,

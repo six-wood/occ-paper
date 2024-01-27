@@ -1,7 +1,7 @@
 from mmengine.config import read_base
 from mmengine.visualization.vis_backend import WandbVisBackend, LocalVisBackend
 from mmdet3d.visualization.local_visualizer import Det3DLocalVisualizer
-
+from projects.occ_paper.occ_paper.models.rbfnet import BEVNet
 
 with read_base():
     from mmdet3d.configs._base_.default_runtime import *
@@ -25,5 +25,8 @@ train_cfg = dict(type=EpochBasedTrainLoop, max_epochs=24, val_interval=1)
 
 # model settings
 model.update(
-    task="sc",
+    task="ssc",
+    pts_backbone=dict(
+        type=BEVNet,
+    ),
 )

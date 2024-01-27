@@ -67,36 +67,32 @@ class SscNet(MVXTwoStageDetector):
         self.task = task
 
     def get_bev_map(self, voxel_dict, batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
-        batch_size = len(batch_data_samples)
+        assert len(batch_data_samples) == 1  # only support batch size 1
+
         coors = voxel_dict["coors"]  # z y x
-        grid_shape = self.data_preprocessor.voxel_layer.grid_shape
-        gt_shape = batch_data_samples[0].gt_pts_seg.voxel_label.shape
-        bev_map = torch.zeros(
-            (batch_size, grid_shape[0], grid_shape[1], grid_shape[2]),
-            dtype=torch.float32,
-            device=voxel_dict["voxels"].device,
-        )  # b x y z
-        target = torch.zeros(
-            (batch_size, gt_shape[0], gt_shape[1], gt_shape[2]),
-            dtype=torch.float32,
-            device=voxel_dict["voxels"].device,
-        )  # b x y z
-        for i in range(batch_size):
-            coor = coors[coors[:, 0] == i]
-            bev_map[i, coor[:, 3], coor[:, 2], coor[:, 1]] = 1
-            target[i] = torch.from_numpy(batch_data_samples[i].gt_pts_seg.voxel_label).cuda()
+        # proj_x = torch.from_numpy(batch_data_samples[0].metainfo["proj_x"])
+        # proj_y = torch.from_numpy(batch_data_samples[0].metainfo["proj_y"])
+        # proj = torch.stack([proj_x, proj_y], dim=1).cuda()
+        target = torch.from_numpy(batch_data_samples[0].gt_pts_seg.voxel_label).cuda().unsqueeze(0)
+        assert torch.Size(self.data_preprocessor.voxel_layer.grid_shape) == target.shape[1:]  # reslution of bev map should be same as target
+
+        bev_map = torch.zeros_like(target)
+        bev_map[0, coors[:, 3], coors[:, 2], coors[:, 1]] = 1
 
         if self.task == "sc":
             ones = torch.ones_like(target)
             target = torch.where(torch.logical_or(target == self.ignore_index, target == 0), target, ones)
 
-        return bev_map, target
+        # return bev_map.permute(0, 3, 1, 2), target, coors[:, 1:], proj
+        return bev_map.permute(0, 3, 1, 2), target
 
     def loss(self, batch_inputs_dict: Dict[List, Tensor], batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
         voxel_dict = batch_inputs_dict["voxels"]
+        # range_map = batch_inputs_dict["range_imgs"]
         bev_map, target = self.get_bev_map(voxel_dict, batch_data_samples)
 
-        pts_fea = self.pts_backbone(bev_map.permute(0, 3, 1, 2).to(target.device))
+        pts_fea = self.pts_backbone(bev_map)
+        # pts_fea = self.pts_backbone(bev_map)
         pred = self.pts_scc_head(pts_fea)
 
         # calculate loss
@@ -111,9 +107,10 @@ class SscNet(MVXTwoStageDetector):
 
     def predict(self, batch_inputs_dict, batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
         voxel_dict = batch_inputs_dict["voxels"]
+        # range_map = batch_inputs_dict["range_imgs"]
         bev_map, target = self.get_bev_map(voxel_dict, batch_data_samples)
 
-        pts_fea = self.pts_backbone(bev_map.permute(0, 3, 1, 2).to(target.device))
+        pts_fea = self.pts_backbone(bev_map)
         sc_pred = self.pts_scc_head(pts_fea)
         y_pred = sc_pred.detach().cpu().numpy()  # [1, 20, 128, 128, 16]
         y_pred = np.argmax(y_pred, axis=1).astype(np.uint8)

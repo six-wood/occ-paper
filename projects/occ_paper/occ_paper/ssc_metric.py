@@ -11,7 +11,6 @@ import numpy as np
 from mmengine.evaluator import BaseMetric
 from mmengine.logging import MMLogger
 
-from mmdet3d.evaluation import seg_eval
 from mmdet3d.registry import METRICS
 from mmengine.logging import print_log
 from terminaltables import AsciiTable
@@ -193,7 +192,7 @@ class SSCMetric(BaseMetric):
             curr_file = f"{submission_prefix}/{sample_idx}.txt"
             np.savetxt(curr_file, pred_label, fmt="%d")
 
-    def seg_eval(gt_labels, seg_preds, label2cat, ignore_index, iou, logger=None):
+    def seg_eval(self, gt_labels, seg_preds, label2cat, ignore_index, completion_iou, logger=None):
         """Semantic Segmentation  Evaluation.
 
         Evaluate the result of the Semantic Segmentation.
@@ -235,20 +234,20 @@ class SSCMetric(BaseMetric):
         header = ["classes"]
         for i in range(len(label2cat)):
             header.append(label2cat[i])
-        header.extend(["miou", "acc", "acc_cls"])
+        header.extend(["iou", "miou", "acc", "acc_cls"])
 
         ret_dict = dict()
         table_columns = [["results"]]
         for i in range(len(label2cat)):
             ret_dict[label2cat[i]] = float(iou[i])
             table_columns.append([f"{iou[i]:.4f}"])
+        ret_dict["iou"] = float(completion_iou)
         ret_dict["miou"] = float(miou)
-        ret_dict["iou"] = float(iou)
         ret_dict["acc"] = float(acc)
         ret_dict["acc_cls"] = float(acc_cls)
 
+        table_columns.append([f"{completion_iou:.4f}"])
         table_columns.append([f"{miou:.4f}"])
-        table_columns.append([f"{iou:.4f}"])
         table_columns.append([f"{acc:.4f}"])
         table_columns.append([f"{acc_cls:.4f}"])
 
@@ -293,14 +292,14 @@ class SSCMetric(BaseMetric):
             completion_fp += fp
             completion_fn += fn
 
-        iou = completion_tp / (completion_tp + completion_fp + completion_fn)
+        completion_iou = completion_tp / (completion_tp + completion_fp + completion_fn)
 
         ret_dict = self.seg_eval(
             gt_ssc_masks,
             pred_ssc_masks,
             label2cat,
             ignore_index,
-            iou=iou,
+            completion_iou=completion_iou,
             logger=logger,
         )
         return ret_dict
