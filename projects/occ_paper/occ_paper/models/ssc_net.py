@@ -70,9 +70,9 @@ class SscNet(MVXTwoStageDetector):
         assert len(batch_data_samples) == 1  # only support batch size 1
 
         coors = voxel_dict["coors"]  # z y x
-        # proj_x = torch.from_numpy(batch_data_samples[0].metainfo["proj_x"])
-        # proj_y = torch.from_numpy(batch_data_samples[0].metainfo["proj_y"])
-        # proj = torch.stack([proj_x, proj_y], dim=1).cuda()
+        proj_x = torch.from_numpy(batch_data_samples[0].metainfo["proj_x"])
+        proj_y = torch.from_numpy(batch_data_samples[0].metainfo["proj_y"])
+        proj = torch.stack([proj_x, proj_y], dim=1).cuda()
         target = torch.from_numpy(batch_data_samples[0].gt_pts_seg.voxel_label).cuda().unsqueeze(0)
         assert torch.Size(self.data_preprocessor.voxel_layer.grid_shape) == target.shape[1:]  # reslution of bev map should be same as target
 
@@ -83,15 +83,14 @@ class SscNet(MVXTwoStageDetector):
             ones = torch.ones_like(target)
             target = torch.where(torch.logical_or(target == self.ignore_index, target == 0), target, ones)
 
-        # return bev_map.permute(0, 3, 1, 2), target, coors[:, 1:], proj
-        return bev_map.permute(0, 3, 1, 2), target
+        return bev_map.permute(0, 3, 1, 2), target, coors[:, 1:], proj
 
     def loss(self, batch_inputs_dict: Dict[List, Tensor], batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
         voxel_dict = batch_inputs_dict["voxels"]
-        # range_map = batch_inputs_dict["range_imgs"]
-        bev_map, target = self.get_bev_map(voxel_dict, batch_data_samples)
+        range_map = batch_inputs_dict["range_imgs"]
+        bev_map, target, coors, proj = self.get_bev_map(voxel_dict, batch_data_samples)
 
-        pts_fea = self.pts_backbone(bev_map)
+        pts_fea = self.pts_backbone(bev_map, range_map, coors, proj)
         # pts_fea = self.pts_backbone(bev_map)
         pred = self.pts_scc_head(pts_fea)
 
@@ -107,10 +106,10 @@ class SscNet(MVXTwoStageDetector):
 
     def predict(self, batch_inputs_dict, batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
         voxel_dict = batch_inputs_dict["voxels"]
-        # range_map = batch_inputs_dict["range_imgs"]
-        bev_map, target = self.get_bev_map(voxel_dict, batch_data_samples)
+        range_map = batch_inputs_dict["range_imgs"]
+        bev_map, target, coors, proj = self.get_bev_map(voxel_dict, batch_data_samples)
 
-        pts_fea = self.pts_backbone(bev_map)
+        pts_fea = self.pts_backbone(bev_map, range_map, coors, proj)
         sc_pred = self.pts_scc_head(pts_fea)
         y_pred = sc_pred.detach().cpu().numpy()  # [1, 20, 128, 128, 16]
         y_pred = np.argmax(y_pred, axis=1).astype(np.uint8)
