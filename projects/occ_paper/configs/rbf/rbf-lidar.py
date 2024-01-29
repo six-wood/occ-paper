@@ -15,7 +15,7 @@ with read_base():
 # visualization settings
 vis_backends = [
     dict(type=LocalVisBackend),
-    dict(type=WandbVisBackend, init_kwargs=dict(project="occ_paper", name="rbf-lidar-sc-res-base")),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="occ_paper", name="rbf-lidar-sc-res")),
 ]
 visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
 
