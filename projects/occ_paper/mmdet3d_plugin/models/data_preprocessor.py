@@ -19,7 +19,7 @@ class SemkittiRangeView:
         self,
         H: int = 64,
         W: int = 1024,
-        fov_up: float = 3.0,
+        fov_up: float = 2.0,
         fov_down: float = -25.0,
         fov_left: float = -90.0,
         fov_right: float = 90.0,
@@ -66,7 +66,7 @@ class SemkittiRangeView:
         depth = torch.norm(points[:, :3], p=2, dim=1)
 
         # get angles of all points
-        yaw = -torch.arctan2(points[:, 1], points[:, 0])
+        yaw = torch.arctan2(points[:, 1], points[:, 0])
         pitch = torch.arcsin(points[:, 2] / depth)
 
         # filter based on angles
@@ -77,7 +77,7 @@ class SemkittiRangeView:
 
         # get projection in image coords
         proj_x = (yaw + abs(self.fov_left)) / self.fov_x
-        proj_y = 1.0 - (pitch + abs(self.fov_down)) / self.fov_y
+        proj_y = (pitch + abs(self.fov_down)) / self.fov_y
 
         # scale to image size using angular resolution
         proj_x *= self.W
@@ -85,16 +85,7 @@ class SemkittiRangeView:
 
         # round and clamp for use as index
         proj_x = torch.floor(proj_x)
-        proj_x = torch.clamp(proj_x, 0, self.W - 1).to(torch.int32)
-
         proj_y = torch.floor(proj_y)
-        proj_y = torch.clamp(proj_y, 0, self.H - 1).to(torch.int32)
-
-        proj_x[~fov_in] = -1
-        proj_y[~fov_in] = -1
-        depth[~fov_in] = -1
-
-        coors = torch.stack([proj_y, proj_x], dim=1)
 
         proj_x = proj_x[fov_in]
         proj_y = proj_y[fov_in]
@@ -111,7 +102,7 @@ class SemkittiRangeView:
         proj_image = (proj_image - self.means[None, None, :]) / self.stds[None, None, :]
         proj_image = proj_image * proj_mask[..., None].to(torch.float32)
 
-        return proj_image, coors
+        return proj_image
 
 
 @MODELS.register_module()

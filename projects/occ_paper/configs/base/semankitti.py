@@ -51,7 +51,13 @@ train_pipeline = [
         ignore_index=ignore_index,
         grid_size=grid_size,
     ),
-    dict(type=ApplayVisMask),
+    dict(
+        type=ApplayVisMask,
+        center=[0, 0, 0],
+        pc_range=point_cloud_range,
+        voxel_size=voxel_size,
+        fov=fov_vertical,
+    ),
     dict(
         type=PackSscInputs,
         keys=["points", "voxel_label"],

@@ -66,12 +66,15 @@ class ApplayVisMask(BaseTransform):
 
     def compute_visibility_mask(
         self,
-        center: np.ndarray,
-        pc_range: np.ndarray,
-        voxel_size: np.ndarray,
-        fov: np.ndarray,
+        center: list = [0, 0, 0],
+        pc_range: list = [0, -25.6, -2.0, 51.2, 25.6, 4.4],
+        voxel_size: list = [0.2, 0.2, 0.2],
+        fov: list = [-25.0, 3.0],
     ) -> np.ndarray:
         # 计算网格大小
+        pc_range = np.array(pc_range)
+        voxel_size = np.array(voxel_size)
+        fov = np.array(fov)
         grid_size = np.round((pc_range[3:] - pc_range[:3]) / voxel_size).astype(np.int32)
 
         # 确定每个轴的范围
@@ -104,7 +107,7 @@ class ApplayVisMask(BaseTransform):
         center: list = [0.0, 0.0, 0.0],
         pc_range: list = [0.0, -25.6, -2.0, 51.2, 25.6, 4.4],
         voxel_size: list = [0.2, 0.2, 0.2],
-        fov: list = [-25, 3],
+        fov: list = [-25, 2],
         **kwargs,
     ) -> None:
         center = np.array(center)

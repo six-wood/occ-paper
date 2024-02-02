@@ -17,7 +17,7 @@ class BevNet(BaseModule):
         bev_shape: Sequence[int] = [256, 256, 32],
         range_shape: Sequence[int] = [64, 1024],
         pc_range: Sequence[float] = [0, -25.6, -2.0, 51.2, 25.6, 4.4],
-        range_fov: Sequence[float] = [-90, -3, 90, 25],
+        range_fov: Sequence[float] = [-90, -25, 90, 2],
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
         act_cfg: ConfigType = dict(type="LeakyReLU"),
@@ -33,7 +33,7 @@ class BevNet(BaseModule):
         )
         r_voxel = np.sqrt(xx**2 + yy**2 + zz**2)
         yaw_voxel = np.arctan2(yy, xx)
-        pitch_voxel = np.arcsin(zz / r_voxel)
+        pit_voxel = np.arcsin(zz / r_voxel)
 
         fov_left = range_fov[0] * np.pi / 180
         fov_down = range_fov[1] * np.pi / 180
@@ -41,7 +41,7 @@ class BevNet(BaseModule):
         fov_y = (range_fov[3] - range_fov[1]) * np.pi / 180
 
         voxel_x = ((yaw_voxel + abs(fov_left)) / fov_x) * range_shape[1]
-        voxel_y = (1.0 - (pitch_voxel + abs(fov_down)) / fov_y) * range_shape[0]
+        voxel_y = ((pit_voxel + abs(fov_down)) / fov_y) * range_shape[0]
 
         mask = (voxel_x >= 0) & (voxel_x < range_shape[1]) & (voxel_y >= 0) & (voxel_y < range_shape[0])
         voxel_x[~mask] = -1
