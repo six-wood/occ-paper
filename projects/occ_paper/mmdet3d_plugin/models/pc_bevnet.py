@@ -10,7 +10,7 @@ from mmcv.cnn import build_activation_layer, build_conv_layer, build_norm_layer
 
 
 @MODELS.register_module()
-class RBFNet(BaseModule):
+class BevNet(BaseModule):
     def __init__(
         self,
         bev_input_dimensions=32,
@@ -20,18 +20,10 @@ class RBFNet(BaseModule):
         bev_strides: Sequence[int] = (2, 2, 2),
         bev_dilations: Sequence[int] = (1, 1, 1),
         bev_encoder_out_channels: Sequence[int] = (48, 64, 80),
-        bev_decoder_out_channels: Sequence[int] = (8, 16, 32),
-        # range_in_channels: int = 5,
-        # range_stem_channels: int = 64,
-        # range_num_stages: int = 3,
-        # range_stage_blocks: Sequence[int] = (2, 2, 2),
-        # range_out_channels: Sequence[int] = (64, 64, 64),
-        # range_strides: Sequence[int] = (2, 2, 2),
-        # range_dilations: Sequence[int] = (1, 1, 1),
-        # range_fuse_channels: Sequence[int] = (64, 16),
+        bev_decoder_out_channels: Sequence[int] = (64, 48, 32),
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
-        act_cfg: ConfigType = dict(type="ReLU"),
+        act_cfg: ConfigType = dict(type="LeakyReLU"),
     ):
         super().__init__()
         """
@@ -41,19 +33,6 @@ class RBFNet(BaseModule):
         assert len(bev_encoder_out_channels) == len(bev_decoder_out_channels) == bev_num_stages, (
             "The length of encoder_out_channels, decoder_out_channels " "should be equal to num_stages"
         )
-        # self.range_net = RangeNet(
-        #     in_channels=range_in_channels,
-        #     stem_channels=range_stem_channels,
-        #     num_stages=range_num_stages,
-        #     stage_blocks=range_stage_blocks,
-        #     out_channels=range_out_channels,
-        #     strides=range_strides,
-        #     dilations=range_dilations,
-        #     fuse_channels=range_fuse_channels,
-        #     conv_cfg=conv_cfg,
-        #     norm_cfg=norm_cfg,
-        #     act_cfg=act_cfg,
-        # )
         # input downsample
 
         # model parameters
@@ -98,13 +77,11 @@ class RBFNet(BaseModule):
         # decode block 1
         self.up_sample1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=2, padding=0, stride=2, bias=False)
         self.conv_layer1 = self._make_conv_layer(d_in1 + e_out3, d_out1)
-        # self.atten_block1 = CrossChannelAttentionModule(d_out1)
 
         # decode block 2
         self.up_sample2 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=2, padding=0, stride=2, bias=False)
         self.up_sample2_1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=4, padding=0, stride=4, bias=False)
         self.conv_layer2 = self._make_conv_layer(d_out1 + d_in1 + e_out2, d_out2)
-        # self.atten_block2 = CrossChannelAttentionModule(int(f * 1.5))
 
         # decode block 3
         self.up_sample3 = nn.ConvTranspose2d(d_out2, d_out2, kernel_size=2, padding=0, stride=2, bias=False)
@@ -114,15 +91,6 @@ class RBFNet(BaseModule):
 
     def _make_conv_layer(self, in_channels: int, out_channels: int) -> None:  # two conv blocks in beginning
         return nn.Sequential(
-            build_conv_layer(self.conv_cfg, in_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            build_activation_layer(self.act_cfg),
-            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            build_activation_layer(self.act_cfg),
-        )
-
-    def _make_encoder_layer(self, in_channels: int, out_channels: int) -> None:  # create encoder blocks
-        return nn.Sequential(
-            nn.MaxPool2d(2),
             build_conv_layer(self.conv_cfg, in_channels, out_channels, kernel_size=3, padding=1, bias=False),
             build_activation_layer(self.act_cfg),
             build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
@@ -166,7 +134,7 @@ class RBFNet(BaseModule):
             )  # add the residual blocks
         return nn.Sequential(*layers)
 
-    def forward(self, bev_map: Tensor = None, range_map: Tensor = None, coors: Tensor = None, proj: Tensor = None):
+    def forward(self, bev_map: Tensor = None):
         # range fea
         # range_fea = self.range_net(range_map)
         # TODO add range->bev transform
@@ -182,14 +150,12 @@ class RBFNet(BaseModule):
         dec1 = self.up_sample1(outs[-1])  # [bs, 80, 64, 64]
         dec1 = torch.cat([dec1, outs[-2]], dim=1)  # [bs, 80+64, 64, 64]
         dec1 = self.conv_layer1(dec1)  # [bs, 64, 64, 64]
-        # dec1 = self.atten_block1(dec1, enc3)  # [bs, 64, 64, 64]
 
         # Decoder2 out_1/2
         dec2 = self.up_sample2(dec1)  # [bs, 64, 128, 128]
         fuse2_1 = self.up_sample2_1(outs[-1])  # [bs, 80, 128, 128]
         dec2 = torch.cat([dec2, outs[-3], fuse2_1], dim=1)  # [bs, 64+48+80, 128, 128]
         dec2 = self.conv_layer2(dec2)  # [bs, 48, 128, 128]
-        # dec2 = self.atten_block2(dec2, enc2)  # [bs, 48, 128, 128]
 
         # Decoder3 out_1
         dec3 = self.up_sample3(dec2)  # [bs, 48, 256, 256]
@@ -197,6 +163,6 @@ class RBFNet(BaseModule):
         fuse3_2 = self.up_sample3_2(outs[-1])  # [bs, 80, 256, 256]
         dec3 = torch.cat([dec3, outs[-4], fuse3_1, fuse3_2], dim=1)  # [bs, 48+32+64+80, 256, 256]
         dec3 = self.conv_layer3(dec3)  # [bs, 32, 256, 256]
-        # out_2D = self.atten_block3(dec3, bev_map)  # [bs, 32, 256, 256]
+        # dec3 = self.atten_block3(dec3, bev_map)
 
         return dec3

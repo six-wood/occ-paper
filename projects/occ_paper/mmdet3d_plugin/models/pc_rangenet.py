@@ -1,90 +1,35 @@
-# Copyright (c) OpenMMLab. All rights reserved.
-from typing import Optional, Sequence, Tuple
-
 import torch
-from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
-from mmengine.model import BaseModule
-from torch import Tensor, nn
-from torch.nn import functional as F
+import torch.nn as nn
+import torch.nn.functional as F
 
+from typing import Sequence, Tuple
+from torch import Tensor
 from mmdet3d.registry import MODELS
-from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
-
-
-class BasicBlock(BaseModule):
-    def __init__(
-        self,
-        inplanes: int,
-        planes: int,
-        stride: int = 1,
-        dilation: int = 1,
-        downsample: Optional[nn.Module] = None,
-        conv_cfg: OptConfigType = None,
-        norm_cfg: ConfigType = dict(type="BN"),
-        act_cfg: ConfigType = dict(type="ReLU"),
-        init_cfg: OptMultiConfig = None,
-    ) -> None:
-        super(BasicBlock, self).__init__(init_cfg)
-
-        self.norm1_name, norm1 = build_norm_layer(norm_cfg, planes, postfix=1)
-        self.norm2_name, norm2 = build_norm_layer(norm_cfg, planes, postfix=2)
-
-        self.conv1 = build_conv_layer(conv_cfg, inplanes, planes, 3, stride=stride, padding=dilation, dilation=dilation, bias=False)
-        self.add_module(self.norm1_name, norm1)
-        self.conv2 = build_conv_layer(conv_cfg, planes, planes, 3, padding=1, bias=False)
-        self.add_module(self.norm2_name, norm2)
-        self.relu = build_activation_layer(act_cfg)
-        self.downsample = downsample
-
-    @property
-    def norm1(self) -> nn.Module:
-        """nn.Module: normalization layer after the first convolution layer."""
-        return getattr(self, self.norm1_name)
-
-    @property
-    def norm2(self) -> nn.Module:
-        """nn.Module: normalization layer after the second convolution layer."""
-        return getattr(self, self.norm2_name)
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        ResBlock: two conv layers with a residual connection.
-        """
-        identity = x
-
-        out = self.conv1(x)
-        out = self.norm1(out)
-        out = self.relu(out)
-
-        out = self.conv2(out)
-        out = self.norm2(out)
-
-        if self.downsample is not None:
-            identity = self.downsample(x)
-
-        out += identity
-        out = self.relu(out)
-        return out
+from mmengine.model import BaseModule
+from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
+from mmdet3d.utils import ConfigType, OptConfigType
+from mmengine.model import BaseModule
+from .moudle import BasicBlock
 
 
 @MODELS.register_module()
-class CusResNet(BaseModule):
+class RangeNet(BaseModule):
     def __init__(
         self,
         in_channels: int = 5,
-        stem_channels: int = 128,
-        num_stages: int = 4,
-        stage_blocks: Sequence[int] = (3, 4, 6, 3),
-        out_channels: Sequence[int] = (128, 128, 128, 128),
-        strides: Sequence[int] = (1, 2, 2, 2),
-        dilations: Sequence[int] = (1, 1, 1, 1),
-        fuse_channels: Sequence[int] = (256, 128),
+        stem_channels: int = 64,
+        num_stages: int = 3,
+        stage_blocks: Sequence[int] = (2, 2, 2),
+        out_channels: Sequence[int] = (64, 64, 64),
+        strides: Sequence[int] = (2, 2, 2),
+        dilations: Sequence[int] = (1, 1, 1),
+        fuse_channels: Sequence[int] = (64, 16),
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
         act_cfg: ConfigType = dict(type="LeakyReLU"),
         init_cfg=None,
     ) -> None:
-        super(CusResNet, self).__init__(init_cfg)
+        super(RangeNet, self).__init__(init_cfg)
 
         assert len(stage_blocks) == len(out_channels) == len(strides) == len(dilations) == num_stages, (
             "The length of stage_blocks, out_channels, strides and " "dilations should be equal to num_stages"
@@ -185,11 +130,16 @@ class CusResNet(BaseModule):
             outs.append(x)
 
         # TODO: move the following operation into neck.
+        rpn_outs = []
         for i in range(len(outs)):
             if outs[i].shape != outs[0].shape:
-                outs[i] = F.interpolate(outs[i], size=outs[0].size()[2:], mode="bilinear", align_corners=True)  # interpolate to match the dimensions
+                rpn_outs.append(
+                    F.interpolate(outs[i], size=outs[0].size()[2:], mode="bilinear", align_corners=True)
+                )  # interpolate to match the dimensions
+            else:
+                rpn_outs.append(outs[i])
 
-        outs[0] = torch.cat(outs, dim=1)  # concatenate the outputs of the residual blocks
+        outs[0] = torch.cat(rpn_outs, dim=1)  # concatenate the outputs of the residual blocks
 
         for layer_name in self.fuse_layers:
             fuse_layer = getattr(self, layer_name)

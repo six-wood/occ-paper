@@ -9,13 +9,26 @@ from mmdet3d.registry import TRANSFORMS
 
 @TRANSFORMS.register_module()
 class LoadVoxelLabelFromFile(BaseTransform):
-    def __init__(self, grid_size: List = [256, 256, 32], scale: str = "1_2") -> None:
-        downscaling = {"1_1": 1, "1_2": 2}
-        self.grid_size = np.array(grid_size) // downscaling[scale]
+    def __init__(
+        self,
+        task: str = "sc",
+        scale: str = "1_1",
+        ignore_index: int = 255,
+        grid_size: List = [256, 256, 32],
+    ) -> None:
+        self.task = task
         self.scale = scale
+        self.ignore_index = ignore_index
+        self.grid_size = np.array(grid_size)
 
     def transform(self, results: dict) -> dict:
         target = np.load(results["voxel_label_path"][self.scale])
         target = target.reshape(-1).reshape(self.grid_size).astype(np.float32)
+
+        assert self.task in ["sc", "ssc"]
+        if self.task == "sc":
+            ones = np.ones_like(target)
+            target = np.where(np.logical_or(target == self.ignore_index, target == 0), target, ones)
+
         results["voxel_label"] = target
         return results

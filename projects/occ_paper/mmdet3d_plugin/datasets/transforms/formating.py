@@ -44,14 +44,10 @@ def to_tensor(data: Union[torch.Tensor, np.ndarray, Sequence, int, float]) -> to
 
 
 @TRANSFORMS.register_module()
-class PackOccInputs(BaseTransform):
-    INPUTS_KEYS = ["points", "img", "range_img"]
+class PackSscInputs(BaseTransform):
+    INPUTS_KEYS = ["points", "img"]
     INSTANCEDATA_3D_KEYS = ["gt_bboxes_3d", "gt_labels_3d", "attr_labels", "depths", "centers_2d"]
-    INSTANCEDATA_2D_KEYS = [
-        "gt_bboxes",
-        "gt_bboxes_labels",
-    ]
-
+    INSTANCEDATA_2D_KEYS = ["gt_bboxes", "gt_bboxes_labels"]
     SEG_KEYS = ["gt_seg_map", "pts_instance_mask", "pts_semantic_mask", "gt_semantic_seg", "voxel_label"]
 
     def __init__(
@@ -184,29 +180,6 @@ class PackOccInputs(BaseTransform):
                 else:
                     img = to_tensor(np.ascontiguousarray(img.transpose(2, 0, 1)))
                 results["img"] = img
-                
-        if "range_img" in results:
-            if isinstance(results["range_img"], list):
-                # process multiple imgs in single frame
-                range_imgs = np.stack(results["range_img"], axis=0)
-                if range_imgs.flags.c_contiguous:
-                    range_imgs = to_tensor(range_imgs).permute(0, 3, 1, 2).contiguous()
-                else:
-                    range_imgs = to_tensor(np.ascontiguousarray(range_imgs.transpose(0, 3, 1, 2)))
-                results["range_img"] = range_imgs
-            else:
-                range_img = results["range_img"]
-                if len(range_img.shape) < 3:
-                    range_img = np.expand_dims(range_img, -1)
-                # To improve the computational speed by by 3-5 times, apply:
-                # `torch.permute()` rather than `np.transpose()`.
-                # Refer to https://github.com/open-mmlab/mmdetection/pull/9533
-                # for more details
-                if range_img.flags.c_contiguous:
-                    range_img = to_tensor(range_img).permute(2, 0, 1).contiguous()
-                else:
-                    range_img = to_tensor(np.ascontiguousarray(range_img.transpose(2, 0, 1)))
-                results["range_img"] = range_img
 
         for key in [
             "proposals",
@@ -217,6 +190,7 @@ class PackOccInputs(BaseTransform):
             "attr_labels",
             "pts_instance_mask",
             "pts_semantic_mask",
+            "voxel_label",
             "centers_2d",
             "depths",
             "gt_labels_3d",

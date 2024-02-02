@@ -85,7 +85,6 @@ class SemanticKittiSC(SemanticKittiDataset):
         scene_idxs: Optional[Union[str, np.ndarray]] = None,
         test_mode: bool = False,
         voxel_size=[0.2, 0.2, 0.2],
-        nsweep=5,
         **kwargs,
     ) -> None:
         super().__init__(

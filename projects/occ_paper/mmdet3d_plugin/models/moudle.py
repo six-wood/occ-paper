@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
@@ -57,6 +58,24 @@ class CSAtt(nn.Module):
         x1 = self.channel_att(x)
         x2 = self.spatial_att(x1)
         return x2
+
+
+class CrossChannelAttentionModule(BaseModule):
+    def __init__(self, num_channels, reduction_ratio=16):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(num_channels, num_channels // reduction_ratio, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(num_channels // reduction_ratio, num_channels, bias=False),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        b, c, _, _ = x.size()
+        att = self.avg_pool(y).view(b, c)
+        att = self.fc(att).view(b, c, 1, 1)
+        return x * att.expand_as(x)
 
 
 class BasicBlock(BaseModule):

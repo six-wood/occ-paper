@@ -1,4 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import numpy as np
 from mmcv.transforms.processing import TestTimeAug
 from mmengine.dataset.sampler import DefaultSampler
 
@@ -8,15 +9,12 @@ from mmdet3d.datasets.transforms.loading import (
     LoadAnnotations3D,
 )
 from mmdet3d.models.segmentors.seg3d_tta import Seg3DTTAModel
+from projects.occ_paper.mmdet3d_plugin.datasets.transforms.formating import PackSscInputs
+from projects.occ_paper.mmdet3d_plugin.datasets.transforms.loading import LoadVoxelLabelFromFile
+from projects.occ_paper.mmdet3d_plugin.datasets.transforms.transforms_3d import ApplayVisMask
+from projects.occ_paper.mmdet3d_plugin.datasets.semantickitti_dataset import SemanticKittiSC as dataset_type
 
-from projects.occ_paper.occ_paper.loading import LoadVoxelLabelFromFile
-from projects.occ_paper.occ_paper.transforms_3d import ApplayVisMask, SemkittiRangeView
-from projects.occ_paper.occ_paper.formating import PackOccInputs
-from projects.occ_paper.occ_paper.semantickitti_dataset import (
-    SemanticKittiSC as dataset_type,
-)
-
-from projects.occ_paper.occ_paper.ssc_metric import SSCMetric
+from projects.occ_paper.mmdet3d_plugin.evaluation.ssc_metric import SSCMetric
 from mmengine.config import read_base
 
 with read_base():
@@ -46,21 +44,31 @@ backend_args = None
 
 train_pipeline = [
     dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
-    dict(type=LoadVoxelLabelFromFile, grid_size=[256, 256, 32], scale=scale),
-    # dict(type=SemkittiRangeView),
+    dict(
+        type=LoadVoxelLabelFromFile,
+        task="sc",
+        scale=scale,
+        ignore_index=ignore_index,
+        grid_size=grid_size,
+    ),
     dict(type=ApplayVisMask),
     dict(
-        type=PackOccInputs,
+        type=PackSscInputs,
         keys=["points", "voxel_label"],
     ),
 ]
 
 test_pipeline = [
     dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
-    dict(type=LoadVoxelLabelFromFile, grid_size=[256, 256, 32], scale=scale),
-    # dict(type=SemkittiRangeView),
     dict(
-        type=PackOccInputs,
+        type=LoadVoxelLabelFromFile,
+        task="sc",
+        scale=scale,
+        ignore_index=ignore_index,
+        grid_size=grid_size,
+    ),
+    dict(
+        type=PackSscInputs,
         keys=["points", "voxel_label"],
     ),
 ]
