@@ -18,6 +18,7 @@ from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 class SscNet(MVXTwoStageDetector):
     def __init__(
         self,
+        pred_hard_mask: bool = False,
         pts_bev_backbone: Optional[dict] = None,
         pts_range_backbone: Optional[dict] = None,
         pts_fusion_neck: Optional[dict] = None,
@@ -34,6 +35,7 @@ class SscNet(MVXTwoStageDetector):
         SSCNet architecture
         :param N: number of classes to be predicted (i.e. 12 for NYUv2)
         """
+        self.fuse_cfg = pts_fusion_neck
         if pts_bev_backbone is not None:
             self.pts_bev_backbone = MODELS.build(pts_bev_backbone)
         if pts_range_backbone is not None:
@@ -49,7 +51,7 @@ class SscNet(MVXTwoStageDetector):
 
     def extract_pts_feat(self, voxel_dict: Dict[str, Tensor], range_dict: Dict[str, Tensor], batch_data_samples) -> Sequence[Tensor]:
         """Extract features of points.
-
+        All Channel first.
         Args:
             voxel_dict(Dict[str, Tensor]): Dict of voxelization infos.
             points (List[tensor], optional):  Point cloud of multiple inputs.
@@ -70,10 +72,12 @@ class SscNet(MVXTwoStageDetector):
             device=coors.device,
         )  # channel first(height first)
         bev_map[coors[:, 0], coors[:, 1], coors[:, 3], coors[:, 2]] = 1
-        voxel_features = self.pts_bev_backbone(bev_map)
+        voxel_features = self.pts_bev_backbone(bev_map)  # channel first
+        if self.fuse_cfg is None:
+            return voxel_features
         range_features = self.pts_range_backbone(range_dict["range_imgs"])
-
-        return voxel_features
+        fuse_fea = self.pts_fusion_neck(voxel_features, range_features)  # channel first
+        return fuse_fea
 
     def loss(self, batch_inputs_dict: Dict[List, Tensor], batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
         voxel_dict = batch_inputs_dict["voxels"]
@@ -113,8 +117,8 @@ class SscNet(MVXTwoStageDetector):
         """
         assert len(batch_data_samples) == 1  # only support batch_size=1
         seg_pred = seg_logits.argmax(dim=1).cpu().numpy()
-        gt_semantic_segs = [data_sample.gt_pts_seg.voxel_label.long() for data_sample in batch_data_samples]
 
+        gt_semantic_segs = [data_sample.gt_pts_seg.voxel_label.long() for data_sample in batch_data_samples]
         seg_true = torch.stack(gt_semantic_segs, dim=0).cpu().numpy()
         result = dict()
         result["y_pred"] = seg_pred

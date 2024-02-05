@@ -92,8 +92,10 @@ class BevNet(BaseModule):
     def _make_conv_layer(self, in_channels: int, out_channels: int) -> None:  # two conv blocks in beginning
         return nn.Sequential(
             build_conv_layer(self.conv_cfg, in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_norm_layer(self.norm_cfg, out_channels)[1],
             build_activation_layer(self.act_cfg),
             build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_norm_layer(self.norm_cfg, out_channels)[1],
             build_activation_layer(self.act_cfg),
         )
 
@@ -135,9 +137,6 @@ class BevNet(BaseModule):
         return nn.Sequential(*layers)
 
     def forward(self, bev_map: Tensor = None):
-        # range fea
-        # range_fea = self.range_net(range_map)
-        # TODO add range->bev transform
         # Encoder
         x = self.stem(bev_map)  # [bs, 32, 256, 256]
         outs = [x]

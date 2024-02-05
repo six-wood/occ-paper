@@ -15,7 +15,7 @@ with read_base():
 # visualization settings
 vis_backends = [
     dict(type=LocalVisBackend),
-    # dict(type=WandbVisBackend, init_kwargs=dict(project="occ_paper_rbnet", name="sc-eres-Hswish")),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="occ_paper_rbnet", name="32b8resconvfuse-officalGT")),
 ]
 visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
 
@@ -27,3 +27,5 @@ train_cfg = dict(type=EpochBasedTrainLoop, max_epochs=24, val_interval=1)
 model.update(
     task="sc",
 )
+randomness = dict(seed=3407)
+# auto_scale_lr = dict(enable=False, base_batch_size=2)

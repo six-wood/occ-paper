@@ -130,18 +130,13 @@ class RangeNet(BaseModule):
             outs.append(x)
 
         # TODO: move the following operation into neck.
-        rpn_outs = []
         for i in range(len(outs)):
             if outs[i].shape != outs[0].shape:
-                rpn_outs.append(
-                    F.interpolate(outs[i], size=outs[0].size()[2:], mode="bilinear", align_corners=True)
-                )  # interpolate to match the dimensions
-            else:
-                rpn_outs.append(outs[i])
+                outs[i] = F.interpolate(outs[i], size=outs[0].size()[2:], mode="bilinear", align_corners=True)  # interpolate to match the dimensions
 
-        outs[0] = torch.cat(rpn_outs, dim=1)  # concatenate the outputs of the residual blocks
+        outs[0] = torch.cat(outs, dim=1)  # concatenate the outputs of the residual blocks
 
         for layer_name in self.fuse_layers:
             fuse_layer = getattr(self, layer_name)
             outs[0] = fuse_layer(outs[0])
-        return tuple(outs)
+        return outs[0]

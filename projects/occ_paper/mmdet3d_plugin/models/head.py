@@ -60,7 +60,6 @@ class DenseSscHead(BaseModule):
 
     def forward(self, x: Tensor):
         # Dimension exapension
-        x = x[:, None, :, :, :]
 
         # Convolution to go from inplanes to planes features...
         x = self.act(self.conv0(x))
@@ -72,7 +71,7 @@ class DenseSscHead(BaseModule):
 
         x = self.conv_classes(x)
 
-        return x.permute(0, 1, 3, 4, 2)
+        return x.permute(0, 1, 3, 4, 2).contiguous()
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
         """Concat voxel-wise Groud Truth."""

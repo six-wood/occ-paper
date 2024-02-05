@@ -73,9 +73,9 @@ class CrossChannelAttentionModule(BaseModule):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         b, c, _, _ = x.size()
-        att = self.avg_pool(y).view(b, c)
-        att = self.fc(att).view(b, c, 1, 1)
-        return x * att.expand_as(x)
+        att = self.avg_pool(y).view(b, c).contiguous()
+        att = self.fc(att).view(b, c, 1, 1).contiguous()
+        return x * att.expand_as(x).contiguous()
 
 
 class BasicBlock(BaseModule):

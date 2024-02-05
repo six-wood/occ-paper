@@ -1,6 +1,7 @@
 import torch.nn as nn
 from projects.occ_paper.mmdet3d_plugin.models.pc_bevnet import BevNet
 from projects.occ_paper.mmdet3d_plugin.models.pc_rangenet import RangeNet
+from projects.occ_paper.mmdet3d_plugin.models.pc_fusionnet import FusionNet
 from projects.occ_paper.mmdet3d_plugin.models.ssc_net import SscNet
 from projects.occ_paper.mmdet3d_plugin.models.head import DenseSscHead
 from projects.occ_paper.mmdet3d_plugin.models.data_preprocessor import SccDataPreprocessor
@@ -14,6 +15,8 @@ with read_base():
 HSwin = dict(type=nn.Hardswish, inplace=True)
 ReLU = dict(type=nn.ReLU, inplace=True)
 class_weight = [0.45, 0.55]
+range_encoder_channel = 32
+fuse_channel = 8
 
 model = dict(
     type=SscNet,
@@ -45,13 +48,32 @@ model = dict(
     ),
     pts_range_backbone=dict(
         type=RangeNet,
+        in_channels=5,
+        stem_channels=range_encoder_channel,
+        num_stages=3,
+        stage_blocks=(2, 2, 2),
+        out_channels=(
+            range_encoder_channel,
+            range_encoder_channel,
+            range_encoder_channel,
+        ),
+        strides=(2, 2, 2),
+        dilations=(1, 1, 1),
+        fuse_channels=(
+            range_encoder_channel,
+            fuse_channel,
+        ),
         act_cfg=HSwin,
     ),
-    pts_fuse_layer=None,
+    pts_fusion_neck=dict(
+        type=FusionNet,
+        conv_cfg=dict(type=nn.Conv2d),
+        norm_cfg=dict(type=nn.BatchNorm2d),
+    ),
     pts_ssc_head=dict(
         type=DenseSscHead,
-        inplanes=1,
-        planes=8,
+        inplanes=fuse_channel,
+        planes=fuse_channel,
         nbr_classes=number_classes,
         dilations_conv_list=[1, 2, 3],
         loss_decode=dict(

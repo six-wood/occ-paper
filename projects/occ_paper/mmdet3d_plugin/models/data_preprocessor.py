@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from numbers import Number
 from typing import List, Optional, Sequence, Union
-
+import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -19,7 +19,7 @@ class SemkittiRangeView:
         self,
         H: int = 64,
         W: int = 1024,
-        fov_up: float = 2.0,
+        fov_up: float = 3.0,
         fov_down: float = -25.0,
         fov_left: float = -90.0,
         fov_right: float = 90.0,
@@ -41,18 +41,7 @@ class SemkittiRangeView:
 
     def ranglize(self, input: list):
         range_dict = {}
-        range_imgs, coors = [], []
-        for i, res in enumerate(input):
-            range_img, coor = self.transform(res)
-            range_img = range_img.unsqueeze(0).permute(0, 3, 1, 2)
-            coor = F.pad(coor, (1, 0), mode="constant", value=i)
-            range_imgs.append(range_img)
-            coors.append(coor)
-
-        range_imgs = torch.cat(range_imgs, dim=0)
-        coors = torch.cat(coors, dim=0)
-        range_dict["range_imgs"] = range_imgs
-        range_dict["coors"] = coors
+        range_dict["range_imgs"] = torch.cat([self.transform(res).unsqueeze(0).permute(0, 3, 1, 2) for res in input], dim=0)
         return range_dict
 
     def transform(self, points: torch.Tensor) -> dict:
@@ -66,7 +55,7 @@ class SemkittiRangeView:
         depth = torch.norm(points[:, :3], p=2, dim=1)
 
         # get angles of all points
-        yaw = torch.arctan2(points[:, 1], points[:, 0])
+        yaw = -torch.arctan2(points[:, 1], points[:, 0])
         pitch = torch.arcsin(points[:, 2] / depth)
 
         # filter based on angles
@@ -77,25 +66,33 @@ class SemkittiRangeView:
 
         # get projection in image coords
         proj_x = (yaw + abs(self.fov_left)) / self.fov_x
-        proj_y = (pitch + abs(self.fov_down)) / self.fov_y
+        proj_y = 1.0 - (pitch + abs(self.fov_down)) / self.fov_y
 
         # scale to image size using angular resolution
         proj_x *= self.W
         proj_y *= self.H
 
-        # round and clamp for use as index
-        proj_x = torch.floor(proj_x)
-        proj_y = torch.floor(proj_y)
-
         proj_x = proj_x[fov_in]
         proj_y = proj_y[fov_in]
         depth = depth[fov_in]
+
+        # round and clamp for use as index
+        proj_x = torch.floor(proj_x)
+        proj_x = torch.clamp(proj_x, 0, self.W - 1).to(torch.int32)
+
+        proj_y = torch.floor(proj_y)
+        proj_y = torch.clamp(proj_y, 0, self.H - 1).to(torch.int32)
 
         # order in decreasing depth
         indices = torch.arange(depth.shape[0], device=device).to(torch.int32)
         order = torch.argsort(depth, descending=True).to(torch.int32)
         proj_idx[proj_y[order], proj_x[order]] = indices[order]
         proj_image[proj_y[order], proj_x[order], 0] = depth[order]
+
+        # depth_img = proj_image[:, :, 0].detach().cpu().numpy()
+        # cv2.normalize(depth_img, depth_img, 0, 255, cv2.NORM_MINMAX)
+        # cv2.imwrite("proj_image.bmp", depth_img)
+
         proj_image[proj_y[order], proj_x[order], 1:] = points[order]
         proj_mask = (proj_idx > 0).to(torch.int32)
 
