@@ -9,13 +9,13 @@ with read_base():
     from .base.net import *
     from .base.semankitti import *
 
-# train_dataloader.update(dataset=dict(indices=50))
-# val_dataloader.update(dataset=dict(indices=50))
+train_dataloader.update(dataset=dict(indices=50))
+val_dataloader.update(dataset=dict(indices=50))
 
 # visualization settings
 vis_backends = [
     dict(type=LocalVisBackend),
-    dict(type=WandbVisBackend, init_kwargs=dict(project="occ_paper_rbnet", name="32b8resconvfuse-officalGT")),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="occ_paper_rbnet", name="32b8convfuse-officalGT")),
 ]
 visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
 

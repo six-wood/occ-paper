@@ -54,7 +54,7 @@ class FusionNet(BaseModule):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
-        self.fuse_conv = self.make_res_layer(32, 32, 1, 1, 1, conv_cfg, norm_cfg, act_cfg)
+        self.fuse_conv = self.make_conv_layer(32, 32)
 
     def make_conv_layer(self, in_channels: int, out_channels: int) -> None:  # two conv blocks in beginning
         return nn.Sequential(
