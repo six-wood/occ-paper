@@ -234,14 +234,14 @@ class SSCMetric(BaseMetric):
         header = ["classes"]
         for i in range(len(label2cat)):
             header.append(label2cat[i])
-        header.extend(["iou", "miou", "acc", "acc_cls"])
+        header.extend(["completion_iou", "miou", "acc", "acc_cls"])
 
         ret_dict = dict()
         table_columns = [["results"]]
         for i in range(len(label2cat)):
             ret_dict[label2cat[i]] = float(iou[i])
             table_columns.append([f"{iou[i]:.4f}"])
-        ret_dict["iou"] = float(completion_iou)
+        ret_dict["completion_iou"] = float(completion_iou)
         ret_dict["miou"] = float(miou)
         ret_dict["acc"] = float(acc)
         ret_dict["acc_cls"] = float(acc_cls)

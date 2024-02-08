@@ -4,6 +4,7 @@ from mmengine.model import BaseModule
 from typing import List, Dict
 
 import torch
+import numpy as np
 from torch import Tensor
 from torch import nn as nn
 
@@ -31,15 +32,32 @@ class DenseSscHead(BaseModule):
         conv_cfg: ConfigType = dict(type="Conv3d"),
         norm_cfg: ConfigType = dict(type="BN3d"),
         act_cfg: ConfigType = dict(type="ReLU"),
-        loss_decode: ConfigType = dict(type="mmdet.CrossEntropyLoss", use_sigmoid=False, class_weight=None, loss_weight=1.0),
+        class_frequencies: List = None,
+        loss_ce: ConfigType = None,
+        loss_focal: ConfigType = None,
+        loss_lovasz: ConfigType = None,
+        loss_geo: ConfigType = None,
+        loss_sem: ConfigType = None,
         ignore_index: int = 255,
     ):
         super(DenseSscHead, self).__init__()
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
-        self.loss_decode = MODELS.build(loss_decode)
         self.ignore_index = ignore_index
+        if loss_ce is not None:
+            self.loss_ce = MODELS.build(loss_ce)
+        if loss_focal is not None:
+            self.loss_focal = MODELS.build(loss_focal)
+        if loss_lovasz is not None:
+            self.loss_lovasz = MODELS.build(loss_lovasz)
+        if loss_geo is not None:
+            self.loss_geo = MODELS.build(loss_geo)
+        if loss_sem is not None:
+            self.loss_sem = MODELS.build(loss_sem)
+
+        self.class_weights = torch.from_numpy(1 / np.log(np.array(class_frequencies) + 0.001))
+
         # First convolution
         self.conv0 = build_conv_layer(self.conv_cfg, inplanes, planes, kernel_size=3, stride=1, padding=1)
 
@@ -93,8 +111,18 @@ class DenseSscHead(BaseModule):
             Dict[str, Tensor]: A dictionary of loss components.
         """
         seg_label = self._stack_batch_gt(batch_data_samples)
+        self.class_weights = self.class_weights.type_as(seg_logit)
         loss = dict()
-        loss["loss_sem_seg"] = self.loss_decode(seg_logit, seg_label, ignore_index=self.ignore_index)
+        if hasattr(self, "loss_ce"):
+            loss["loss_ce"] = self.loss_ce(seg_logit, seg_label, weight=self.class_weights, ignore_index=self.ignore_index)
+        if hasattr(self, "loss_focal"):
+            loss["loss_focal"] = self.loss_focal(seg_logit, seg_label, weight=self.class_weights, ignore_index=self.ignore_index)
+        if hasattr(self, "loss_lovasz"):
+            loss["loss_lovasz"] = self.loss_lovasz(seg_logit, seg_label, ignore_index=self.ignore_index)
+        if hasattr(self, "loss_geo"):
+            loss["loss_geo"] = self.loss_geo(seg_logit, seg_label, ignore_index=self.ignore_index)
+        if hasattr(self, "loss_sem"):
+            loss["loss_sem"] = self.loss_sem(seg_logit, seg_label, ignore_index=self.ignore_index)
         return loss
 
     def loss(self, inputs: Tensor, batch_data_samples: SampleList, train_cfg: ConfigType) -> Dict[str, Tensor]:

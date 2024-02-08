@@ -14,13 +14,11 @@ optim_wrapper = dict(
 )
 
 param_scheduler = [
-    dict(type=LinearLR, start_factor=1.0 / 3, by_epoch=False, begin=0, end=500),
-    dict(
-        type=CosineAnnealingLR, begin=0, T_max=40, end=40, by_epoch=True, eta_min=1e-5
-    ),
+    dict(type=LinearLR, start_factor=0.25, by_epoch=False, begin=0, end=1000),
+    dict(type=CosineAnnealingLR, begin=0, T_max=40, end=40, by_epoch=True, eta_min=1e-5),
 ]
 # training schedule for 1x
-train_cfg = dict(type=EpochBasedTrainLoop, max_epochs=24, val_interval=1)
+train_cfg = dict(type=EpochBasedTrainLoop, max_epochs=40, val_interval=1)
 val_cfg = dict(type=ValLoop)
 test_cfg = dict(type=TestLoop)
 

@@ -18,7 +18,6 @@ from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 class SscNet(MVXTwoStageDetector):
     def __init__(
         self,
-        pred_hard_mask: bool = False,
         pts_bev_backbone: Optional[dict] = None,
         pts_range_backbone: Optional[dict] = None,
         pts_fusion_neck: Optional[dict] = None,

@@ -10,6 +10,7 @@ import io_data as SemanticKittiIO
 import argparse
 import yaml
 
+
 def _downsample_label(label, voxel_size=(240, 144, 240), downscale=4):
     r"""downsample the labeled data,
     code taken from https://github.com/waterljwant/SSC/blob/master/dataloaders/dataloader.py#L262
@@ -35,9 +36,7 @@ def _downsample_label(label, voxel_size=(240, 144, 240), downscale=4):
         y = int((i - z * s01) / small_size[0])
         x = int(i - z * s01 - y * small_size[0])
 
-        label_i[:, :, :] = label[
-            x * ds : (x + 1) * ds, y * ds : (y + 1) * ds, z * ds : (z + 1) * ds
-        ]
+        label_i[:, :, :] = label[x * ds : (x + 1) * ds, y * ds : (y + 1) * ds, z * ds : (z + 1) * ds]
         label_bin = label_i.flatten()
 
         zero_count_0 = np.array(np.where(label_bin == 0)).size
@@ -47,21 +46,16 @@ def _downsample_label(label, voxel_size=(240, 144, 240), downscale=4):
         if zero_count > empty_t:
             label_downscale[x, y, z] = 0 if zero_count_0 > zero_count_255 else 255
         else:
-            label_i_s = label_bin[
-                np.where(np.logical_and(label_bin > 0, label_bin < 255))
-            ]
+            label_i_s = label_bin[np.where(np.logical_and(label_bin > 0, label_bin < 255))]
             label_downscale[x, y, z] = np.argmax(np.bincount(label_i_s))
     return label_downscale
 
 
 def majority_pooling(grid, k_size=2):
-    result = np.zeros(
-        (grid.shape[0] // k_size, grid.shape[1] // k_size, grid.shape[2] // k_size)
-    )
+    result = np.zeros((grid.shape[0] // k_size, grid.shape[1] // k_size, grid.shape[2] // k_size))
     for xx in range(0, int(np.floor(grid.shape[0] / k_size))):
         for yy in range(0, int(np.floor(grid.shape[1] / k_size))):
             for zz in range(0, int(np.floor(grid.shape[2] / k_size))):
-
                 sub_m = grid[
                     (xx * k_size) : (xx * k_size) + k_size,
                     (yy * k_size) : (yy * k_size) + k_size,
@@ -81,6 +75,36 @@ def majority_pooling(grid, k_size=2):
     return result
 
 
+def label_rectification(
+    grid_ind, voxel_label, instance_label, dynamic_classes=[1, 4, 5, 6, 7, 8], voxel_shape=(256, 256, 32), ignore_class_label=255
+):
+    segmentation_label = voxel_label[grid_ind[:, 0], grid_ind[:, 1], grid_ind[:, 2]]
+
+    for c in dynamic_classes:
+        voxel_pos_class_c = (voxel_label == c).astype(int)
+        instance_label_class_c = instance_label[segmentation_label == c].squeeze(1)
+
+        if len(instance_label_class_c) == 0:
+            pos_to_remove = voxel_pos_class_c
+
+        elif len(instance_label_class_c) > 0 and np.sum(voxel_pos_class_c) > 0:
+            mask_class_c = np.zeros(voxel_shape, dtype=int)
+            point_pos_class_c = grid_ind[segmentation_label == c]
+            uniq_instance_label_class_c = np.unique(instance_label_class_c)
+
+            for i in uniq_instance_label_class_c:
+                point_pos_instance_i = point_pos_class_c[instance_label_class_c == i]
+                x_max, y_max, z_max = np.amax(point_pos_instance_i, axis=0)
+                x_min, y_min, z_min = np.amin(point_pos_instance_i, axis=0)
+
+                mask_class_c[x_min:x_max, y_min:y_max, z_min:z_max] = 1
+
+            pos_to_remove = (voxel_pos_class_c - mask_class_c) > 0
+
+        voxel_label[pos_to_remove] = ignore_class_label
+
+    return voxel_label
+
 
 def main(config):
     scene_size = (256, 256, 32)
@@ -92,32 +116,30 @@ def main(config):
     )
 
     for sequence in sequences:
-        sequence_path = os.path.join(
-            config.kitti_root, "dataset", "sequences", sequence
-        )
-        label_paths = sorted(
-            glob.glob(os.path.join(sequence_path, "voxels", "*.label"))
-        )
-        invalid_paths = sorted(
-            glob.glob(os.path.join(sequence_path, "voxels", "*.invalid"))
-        )
+        sequence_path = os.path.join(config.kitti_root, "dataset", "sequences", sequence)
+        pc_path = sorted(glob.glob(os.path.join(sequence_path, "velodyne", "*.bin")))
+        pc_label = sorted(glob.glob(os.path.join(sequence_path, "labels", "*.label")))
+        label_paths = sorted(glob.glob(os.path.join(sequence_path, "voxels", "*.label")))
+        invalid_paths = sorted(glob.glob(os.path.join(sequence_path, "voxels", "*.invalid")))
         out_dir = os.path.join(config.kitti_preprocess_root, "labels", sequence)
         os.makedirs(out_dir, exist_ok=True)
 
-        downscaling = {"1_1": 1, "1_2": 2}
+        # downscaling = {"1_1": 1, "1_2": 2}
+        downscaling = {"1_1": 1}
+        min_bound = np.array([0, -25.6, -2])
+        max_bound = np.array([51.2, 25.6, 4.4])
+        intervals = np.array([0.2, 0.2, 0.2])
 
         for i in tqdm(range(len(label_paths))):
-
             frame_id, extension = os.path.splitext(os.path.basename(label_paths[i]))
 
+            PC = SemanticKittiIO._read_pointcloud_SemKITTI(pc_path[i])[:, :3]
+            SINGLE_LABEL = SemanticKittiIO._read_label_SemKITTI(pc_label[i])
+            grid_ind = (np.floor((np.clip(PC, min_bound, max_bound) - min_bound) / intervals)).astype(np.int32)
             LABEL = SemanticKittiIO._read_label_SemKITTI(label_paths[i])
             INVALID = SemanticKittiIO._read_invalid_SemKITTI(invalid_paths[i])
-            LABEL = remap_lut[LABEL.astype(np.uint16)].astype(
-                np.float32
-            )  # Remap 20 classes semanticKITTI SSC
-            LABEL[
-                np.isclose(INVALID, 1)
-            ] = 255  # Setting to unknown all voxels marked on invalid mask...
+            LABEL = remap_lut[LABEL.astype(np.uint16)].astype(np.float32)  # Remap 20 classes semanticKITTI SSC
+            LABEL[np.isclose(INVALID, 1)] = 255  # Setting to unknown all voxels marked on invalid mask...
             LABEL = LABEL.reshape([256, 256, 32])
 
             for scale in downscaling:
@@ -126,11 +148,10 @@ def main(config):
                 # If files have not been created...
                 if not os.path.exists(label_filename):
                     if scale != "1_1":
-                        LABEL_ds = _downsample_label(
-                            LABEL, (256, 256, 32), downscaling[scale]
-                        )
+                        LABEL_ds = _downsample_label(LABEL, (256, 256, 32), downscaling[scale])
                     else:
                         LABEL_ds = LABEL
+                    LABEL_ds = label_rectification(grid_ind, LABEL_ds, SINGLE_LABEL)
                     np.save(label_filename, LABEL_ds)
                     print("wrote to", label_filename)
 
@@ -138,19 +159,19 @@ def main(config):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("./label_preprocess.py")
     parser.add_argument(
-        '--kitti_root',
-        '-r',
+        "--kitti_root",
+        "-r",
         type=str,
         required=True,
-        help='kitti_root',
+        help="kitti_root",
     )
 
     parser.add_argument(
-        '--kitti_preprocess_root',
-        '-p',
+        "--kitti_preprocess_root",
+        "-p",
         type=str,
         required=True,
-        help='kitti_preprocess_root',
+        help="kitti_preprocess_root",
     )
     config, unparsed = parser.parse_known_args()
     main(config)
