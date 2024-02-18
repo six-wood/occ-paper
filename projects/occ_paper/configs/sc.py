@@ -200,7 +200,6 @@ model = dict(
         dilations_conv_list=[1, 2, 3],
         loss_ce=dict(
             type=CrossEntropyLoss,
-            avg_non_ignore=True,
             class_weight=[0.45, 0.55],
         ),
         ignore_index=255,

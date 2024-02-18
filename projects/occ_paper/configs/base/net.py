@@ -4,20 +4,24 @@ from projects.occ_paper.mmdet3d_plugin.models.pc_rangenet import RangeNet
 from projects.occ_paper.mmdet3d_plugin.models.pc_fusionnet import FusionNet
 from projects.occ_paper.mmdet3d_plugin.models.ssc_net import SscNet
 from projects.occ_paper.mmdet3d_plugin.models.head import DenseSscHead
-from projects.occ_paper.mmdet3d_plugin.models.loss import OccLovaszLoss, Geo_scal_loss, Sem_scal_loss
 from projects.occ_paper.mmdet3d_plugin.models.data_preprocessor import SccDataPreprocessor
+from projects.occ_paper.mmdet3d_plugin.models.losses import OccLovaszLoss
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
-from mmdet.models.losses.focal_loss import FocalLoss
+from mmdet3d.models.layers.fusion_layers import PointFusion
 from mmengine.config import read_base
 
 HSwin = dict(type=nn.Hardswish, inplace=True)
 ReLU = dict(type=nn.ReLU, inplace=True)
+syncNorm = dict(type=nn.SyncBatchNorm, momentum=0.01, eps=1e-3)
+conv2d = dict(type=nn.Conv2d)
+conv3d = dict(type=nn.Conv3d)
 
 with read_base():
     from .share_paramenter import *
 
 model = dict(
     type=SscNet,
+    use_pred_mask=True,
     data_preprocessor=dict(
         type=SccDataPreprocessor,
         voxel=True,
@@ -42,7 +46,9 @@ model = dict(
     ),
     pts_bev_backbone=dict(
         type=BevNet,
+        conv_cfg=conv2d,
         act_cfg=HSwin,
+        norm_cfg=syncNorm,
     ),
     pts_range_backbone=dict(
         type=RangeNet,
@@ -59,15 +65,29 @@ model = dict(
         strides=(1, 2, 2, 2),
         dilations=(1, 1, 1, 1),
         fuse_channels=(
-            2 * range_encoder_channel,
+            range_encoder_channel,
             fuse_channel,
         ),
+        conv_cfg=conv2d,
         act_cfg=HSwin,
+        norm_cfg=syncNorm,
     ),
     pts_fusion_neck=dict(
         type=FusionNet,
-        conv_cfg=dict(type=nn.Conv2d),
-        norm_cfg=dict(type=nn.BatchNorm2d),
+        pts_fusion_layer=dict(
+            type=PointFusion,
+            img_channels=256,
+            pts_channels=64,
+            mid_channels=128,
+            out_channels=128,
+            img_levels=[0, 1, 2, 3, 4],
+            align_corners=False,
+            activate_out=True,
+            fuse_out=False,
+        ),
+        conv_cfg=conv2d,
+        norm_cfg=syncNorm,
+        act_cfg=HSwin,
     ),
     pts_ssc_head=dict(
         type=DenseSscHead,
@@ -75,38 +95,21 @@ model = dict(
         planes=fuse_channel,
         nbr_classes=number_classes,
         dilations_conv_list=[1, 2, 3],
-        # loss_focal=dict(
-        #     type=FocalLoss,
-        #     use_sigmoid=True,
-        #     gamma=2.0,
-        #     alpha=0.25,
-        #     loss_weight=1.0,
-        # ),
         loss_ce=dict(
             type=CrossEntropyLoss,
-            use_sigmoid=True,
+            class_weight=semantickitti_class_weight,
             loss_weight=1.0,
         ),
         loss_lovasz=dict(
             type=OccLovaszLoss,
-            loss_weight=1.0,
+            classes=class_index,  # ignore the free class
+            class_weight=semantickitti_class_weight,
             reduction="none",
-        ),
-        loss_geo=dict(
-            type=Geo_scal_loss,
-            ignore_index=ignore_index,
-            free_index=free_index,
             loss_weight=1.0,
         ),
-        loss_sem=dict(
-            type=Sem_scal_loss,
-            ignore_index=ignore_index,
-            loss_weight=1.0,
-        ),
-        class_frequencies=semantic_kitti_class_frequencies,
         ignore_index=ignore_index,
-        conv_cfg=dict(type=nn.Conv3d),
-        norm_cfg=dict(type=nn.BatchNorm3d),
+        conv_cfg=conv3d,
+        norm_cfg=syncNorm,
         act_cfg=HSwin,
     ),
 )

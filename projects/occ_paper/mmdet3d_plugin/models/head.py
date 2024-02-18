@@ -32,9 +32,8 @@ class DenseSscHead(BaseModule):
         conv_cfg: ConfigType = dict(type="Conv3d"),
         norm_cfg: ConfigType = dict(type="BN3d"),
         act_cfg: ConfigType = dict(type="ReLU"),
-        class_frequencies: List = None,
         loss_ce: ConfigType = None,
-        loss_focal: ConfigType = None,
+        # loss_focal: ConfigType = None,
         loss_lovasz: ConfigType = None,
         loss_geo: ConfigType = None,
         loss_sem: ConfigType = None,
@@ -47,16 +46,14 @@ class DenseSscHead(BaseModule):
         self.ignore_index = ignore_index
         if loss_ce is not None:
             self.loss_ce = MODELS.build(loss_ce)
-        if loss_focal is not None:
-            self.loss_focal = MODELS.build(loss_focal)
+        # if loss_focal is not None:
+        #     self.loss_focal = MODELS.build(loss_focal)
         if loss_lovasz is not None:
             self.loss_lovasz = MODELS.build(loss_lovasz)
         if loss_geo is not None:
             self.loss_geo = MODELS.build(loss_geo)
         if loss_sem is not None:
             self.loss_sem = MODELS.build(loss_sem)
-
-        self.class_weights = torch.from_numpy(1 / np.log(np.array(class_frequencies) + 0.001))
 
         # First convolution
         self.conv0 = build_conv_layer(self.conv_cfg, inplanes, planes, kernel_size=3, stride=1, padding=1)
@@ -111,14 +108,13 @@ class DenseSscHead(BaseModule):
             Dict[str, Tensor]: A dictionary of loss components.
         """
         seg_label = self._stack_batch_gt(batch_data_samples)
-        self.class_weights = self.class_weights.type_as(seg_logit)
         loss = dict()
         if hasattr(self, "loss_ce"):
-            loss["loss_ce"] = self.loss_ce(seg_logit, seg_label, weight=self.class_weights, ignore_index=self.ignore_index)
-        if hasattr(self, "loss_focal"):
-            loss["loss_focal"] = self.loss_focal(seg_logit, seg_label, weight=self.class_weights, ignore_index=self.ignore_index)
+            loss["loss_ce"] = self.loss_ce(seg_logit, seg_label, ignore_index=self.ignore_index)
+        # if hasattr(self, "loss_focal"):
+        #     loss["loss_focal"] = self.loss_focal(seg_logit, seg_label, weight=self.class_weights, ignore_index=self.ignore_index)
         if hasattr(self, "loss_lovasz"):
-            loss["loss_lovasz"] = self.loss_lovasz(seg_logit, seg_label, ignore_index=self.ignore_index)
+            loss["loss_lovasz"] = self.loss_lovasz(torch.softmax(seg_logit, dim=1), seg_label, ignore_index=self.ignore_index)
         if hasattr(self, "loss_geo"):
             loss["loss_geo"] = self.loss_geo(seg_logit, seg_label, ignore_index=self.ignore_index)
         if hasattr(self, "loss_sem"):

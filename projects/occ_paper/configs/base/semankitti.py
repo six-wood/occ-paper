@@ -11,7 +11,7 @@ from mmdet3d.datasets.transforms.loading import (
 from mmdet3d.models.segmentors.seg3d_tta import Seg3DTTAModel
 from projects.occ_paper.mmdet3d_plugin.datasets.transforms.formating import PackSscInputs
 from projects.occ_paper.mmdet3d_plugin.datasets.transforms.loading import LoadVoxelLabelFromFile
-from projects.occ_paper.mmdet3d_plugin.datasets.transforms.transforms_3d import ApplayVisMask
+from projects.occ_paper.mmdet3d_plugin.datasets.transforms.transforms_3d import ApplayVisMask, RandomFlipVoxel
 from projects.occ_paper.mmdet3d_plugin.datasets.semantickitti_dataset import SemanticKittiSC as dataset_type
 
 from projects.occ_paper.mmdet3d_plugin.evaluation.ssc_metric import SSCMetric
@@ -37,26 +37,26 @@ data_root = "data/semantickitti/"
 #     1: 1,
 # }
 class_names = (
-    "free",
-    "car",
-    "bicycle",
-    "motorcycle",
-    "truck",
-    "bus",
-    "person",
-    "bicyclist",
-    "motorcyclist",
-    "road",
-    "parking",
-    "sidewalk",
-    "other-ground",
-    "building",
-    "fence",
-    "vegetation",
-    "trunck",
-    "terrian",
-    "pole",
-    "traffic-sign",
+    "free",  # 0
+    "car",  # 1
+    "bicycle",  # 2
+    "motorcycle",  # 3
+    "truck",  # 4
+    "bus",  # 5
+    "person",  # 6
+    "bicyclist",  # 7
+    "motorcyclist",  # 8
+    "road",  # 9
+    "parking",  # 10
+    "sidewalk",  # 11
+    "other-ground",  # 12
+    "building",  # 13
+    "fence",  # 14
+    "vegetation",  # 15
+    "trunck",  # 16
+    "terrian",  # 17
+    "pole",  # 18
+    "traffic-sign",  # 19
 )
 palette = list(
     [
@@ -112,7 +112,13 @@ input_modality = dict(use_lidar=True, use_camera=True)
 backend_args = None
 
 train_pipeline = [
-    dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
+    dict(
+        type=LoadPointsFromFile,
+        coord_type="LIDAR",
+        load_dim=4,
+        use_dim=4,
+        backend_args=backend_args,
+    ),
     dict(
         type=LoadVoxelLabelFromFile,
         task="ssc",
@@ -127,14 +133,24 @@ train_pipeline = [
         voxel_size=voxel_size,
         fov=fov_vertical,
     ),
+    # dict(
+    #     type=RandomFlipVoxel,
+    #     flip_ratio_bev_horizontal=0.5,
+    # ),
     dict(
         type=PackSscInputs,
         keys=["points", "voxel_label"],
     ),
 ]
 
-test_pipeline = [
-    dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
+val_pipeline = [
+    dict(
+        type=LoadPointsFromFile,
+        coord_type="LIDAR",
+        load_dim=4,
+        use_dim=4,
+        backend_args=backend_args,
+    ),
     dict(
         type=LoadVoxelLabelFromFile,
         task="ssc",
@@ -148,7 +164,20 @@ test_pipeline = [
     ),
 ]
 
-val_pipeline = train_pipeline
+test_pipeline = [
+    dict(
+        type="LoadPointsFromFile",
+        coord_type="LIDAR",
+        load_dim=4,
+        use_dim=4,
+        backend_args=backend_args,
+    ),
+    dict(
+        type=PackSscInputs,
+        keys=["points"],
+    ),
+]
+
 
 train_split = dict(
     type=dataset_type,
@@ -176,7 +205,7 @@ val_split = dict(
 test_split = dict(
     type=dataset_type,
     data_root=data_root,
-    ann_file="semantickittiDataset_infos_test.pkl.pkl",
+    ann_file="semantickittiDataset_infos_test.pkl",
     pipeline=test_pipeline,
     metainfo=metainfo,
     modality=input_modality,
@@ -211,5 +240,5 @@ test_dataloader = dict(
     dataset=test_split,
 )
 
-val_evaluator = dict(type=SSCMetric)
+val_evaluator = dict(type=SSCMetric, ignore_index=[ignore_index, free_index])
 test_evaluator = val_evaluator

@@ -6,6 +6,10 @@ from mmengine.model import BaseModule
 from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
 from typing import Optional
+from mmdet3d.registry import MODELS
+from mmcv.cnn.bricks import DropPath
+from functools import partial
+import torch.utils.checkpoint as cp
 
 act_layer = nn.ReLU(inplace=True)
 
@@ -78,7 +82,7 @@ class CrossChannelAttentionModule(BaseModule):
         return x * att.expand_as(x).contiguous()
 
 
-class BasicBlock(BaseModule):
+class ResBlock(BaseModule):
     def __init__(
         self,
         inplanes: int,
@@ -91,7 +95,7 @@ class BasicBlock(BaseModule):
         act_cfg: ConfigType = dict(type="ReLU"),
         init_cfg: OptMultiConfig = None,
     ) -> None:
-        super(BasicBlock, self).__init__(init_cfg)
+        super(ResBlock, self).__init__(init_cfg)
 
         self.norm1_name, norm1 = build_norm_layer(norm_cfg, planes, postfix=1)
         self.norm2_name, norm2 = build_norm_layer(norm_cfg, planes, postfix=2)

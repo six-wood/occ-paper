@@ -106,19 +106,22 @@ def label_rectification(
     return voxel_label
 
 
+sweep = 1
+
+
 def main(config):
     scene_size = (256, 256, 32)
     sequences = ["00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]
     remap_lut = SemanticKittiIO._get_remap_lut(
         os.path.join(
-            "./label/semantic-kitti.yaml",
+            "./semantic-kitti.yaml",
         )
     )
 
     for sequence in sequences:
         sequence_path = os.path.join(config.kitti_root, "dataset", "sequences", sequence)
-        pc_path = sorted(glob.glob(os.path.join(sequence_path, "velodyne", "*.bin")))
-        pc_label = sorted(glob.glob(os.path.join(sequence_path, "labels", "*.label")))
+        pc_paths = sorted(glob.glob(os.path.join(sequence_path, "velodyne", "*.bin")))
+        pc_labels = sorted(glob.glob(os.path.join(sequence_path, "labels", "*.label")))
         label_paths = sorted(glob.glob(os.path.join(sequence_path, "voxels", "*.label")))
         invalid_paths = sorted(glob.glob(os.path.join(sequence_path, "voxels", "*.invalid")))
         out_dir = os.path.join(config.kitti_preprocess_root, "labels", sequence)
@@ -130,11 +133,19 @@ def main(config):
         max_bound = np.array([51.2, 25.6, 4.4])
         intervals = np.array([0.2, 0.2, 0.2])
 
-        for i in tqdm(range(len(label_paths))):
+        for i in tqdm(range(0, len(label_paths), sweep)):
             frame_id, extension = os.path.splitext(os.path.basename(label_paths[i]))
 
-            PC = SemanticKittiIO._read_pointcloud_SemKITTI(pc_path[i])[:, :3]
-            SINGLE_LABEL = SemanticKittiIO._read_label_SemKITTI(pc_label[i])
+            PC = SemanticKittiIO._read_pointcloud_SemKITTI(pc_paths[i])[:, :3]
+            PC_INSTANCE = np.fromfile(pc_labels[i], dtype=np.uint32).reshape(-1, 1) >> 16
+
+            box_filter = np.logical_and(
+                np.logical_and(PC[:, 0] >= min_bound[0], PC[:, 0] < max_bound[0]),
+                np.logical_and(PC[:, 1] >= min_bound[1], PC[:, 1] < max_bound[1]),
+                np.logical_and(PC[:, 2] >= min_bound[2], PC[:, 2] < max_bound[2]),
+            )
+            PC = PC[box_filter]
+            PC_INSTANCE = PC_INSTANCE[box_filter]
             grid_ind = (np.floor((np.clip(PC, min_bound, max_bound) - min_bound) / intervals)).astype(np.int32)
             LABEL = SemanticKittiIO._read_label_SemKITTI(label_paths[i])
             INVALID = SemanticKittiIO._read_invalid_SemKITTI(invalid_paths[i])
@@ -151,7 +162,7 @@ def main(config):
                         LABEL_ds = _downsample_label(LABEL, (256, 256, 32), downscaling[scale])
                     else:
                         LABEL_ds = LABEL
-                    LABEL_ds = label_rectification(grid_ind, LABEL_ds, SINGLE_LABEL)
+                    LABEL_ds = label_rectification(grid_ind, LABEL_ds, PC_INSTANCE)
                     np.save(label_filename, LABEL_ds)
                     print("wrote to", label_filename)
 

@@ -55,9 +55,9 @@ class RandomFlipVoxel(RandomFlip3D):
         if "voxel_label" in input_dict:
             input_dict["points"].flip(direction)
             if direction == "horizontal":
-                input_dict["voxel_label"] = np.fliplr(input_dict["voxel_label"])
+                input_dict["voxel_label"] = np.flip(input_dict["voxel_label"], axis=1).copy()
             elif direction == "vertical":
-                input_dict["voxel_label"] = np.flipud(input_dict["voxel_label"])
+                input_dict["voxel_label"] = np.flip(input_dict["voxel_label"], axis=0).copy()
 
 
 def compute_visibility_mask(

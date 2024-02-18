@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Sequence
 from torch import Tensor
-from .moudle import BasicBlock
+from .moudle import ResBlock
 from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
 from mmdet3d.utils import ConfigType, OptConfigType
@@ -118,7 +118,7 @@ class BevNet(BaseModule):
 
         layers = []
         layers.append(
-            BasicBlock(
+            ResBlock(
                 inplanes=inplanes,
                 planes=planes,
                 stride=stride,
@@ -132,7 +132,7 @@ class BevNet(BaseModule):
         inplanes = planes
         for _ in range(1, num_blocks):
             layers.append(
-                BasicBlock(inplanes=inplanes, planes=planes, stride=1, dilation=dilation, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
+                ResBlock(inplanes=inplanes, planes=planes, stride=1, dilation=dilation, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
             )  # add the residual blocks
         return nn.Sequential(*layers)
 

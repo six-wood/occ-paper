@@ -9,7 +9,7 @@ from mmengine.model import BaseModule
 from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
 from mmdet3d.utils import ConfigType, OptConfigType
 from mmengine.model import BaseModule
-from .moudle import BasicBlock
+from .moudle import ResBlock
 
 
 @MODELS.register_module()
@@ -103,7 +103,7 @@ class RangeNet(BaseModule):
 
         layers = []
         layers.append(
-            BasicBlock(
+            ResBlock(
                 inplanes=inplanes,
                 planes=planes,
                 stride=stride,
@@ -117,7 +117,7 @@ class RangeNet(BaseModule):
         inplanes = planes
         for _ in range(1, num_blocks):
             layers.append(
-                BasicBlock(inplanes=inplanes, planes=planes, stride=1, dilation=dilation, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
+                ResBlock(inplanes=inplanes, planes=planes, stride=1, dilation=dilation, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
             )  # add the residual blocks
         return nn.Sequential(*layers)
 
