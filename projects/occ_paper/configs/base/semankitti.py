@@ -120,6 +120,10 @@ train_pipeline = [
         backend_args=backend_args,
     ),
     dict(
+        type=LoadImageFromFile,
+        backend_args=backend_args,
+    ),
+    dict(
         type=LoadVoxelLabelFromFile,
         task="ssc",
         scale=scale,
@@ -152,6 +156,10 @@ val_pipeline = [
         backend_args=backend_args,
     ),
     dict(
+        type=LoadImageFromFile,
+        backend_args=backend_args,
+    ),
+    dict(
         type=LoadVoxelLabelFromFile,
         task="ssc",
         scale=scale,
@@ -170,6 +178,10 @@ test_pipeline = [
         coord_type="LIDAR",
         load_dim=4,
         use_dim=4,
+        backend_args=backend_args,
+    ),
+    dict(
+        type="LoadImageFromFile",
         backend_args=backend_args,
     ),
     dict(

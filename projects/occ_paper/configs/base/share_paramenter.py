@@ -12,7 +12,10 @@ free_index = 0
 number_classes = 20
 # class_weight = [0.45, 0.55]
 range_encoder_channel = 64
-fuse_channel = 32
+fuse_channel = 64
+range_out_channel = 64
+head_channel = 32
+
 
 semantic_kitti_class_frequencies = [
     5.41773033e09,

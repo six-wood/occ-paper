@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from typing import Sequence, Optional
 from torch import Tensor
@@ -16,9 +17,8 @@ class FusionNet(BaseModule):
         grid_shape: Sequence[int] = [256, 256, 32],
         range_shape: Sequence[int] = [64, 1024],
         pc_range: Sequence[float] = [0, -25.6, -2.0, 51.2, 25.6, 4.4],
-        range_fov: Sequence[float] = [-90, -25, 90, 2],
-        pts_fusion_layer: Optional[dict] = None,
-        img_fusion_layer: Optional[dict] = None,
+        range_fov: Sequence[float] = [-25, -90, 2, 90],
+        fusion_layer: Optional[dict] = None,
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
         act_cfg: ConfigType = dict(type="LeakyReLU"),
@@ -36,31 +36,30 @@ class FusionNet(BaseModule):
         yaw_voxel = -np.arctan2(yy, xx)
         pit_voxel = np.arcsin(zz / r_voxel)
 
-        fov_left = range_fov[0] * np.pi / 180
-        fov_down = range_fov[1] * np.pi / 180
+        fov_down = range_fov[0] * np.pi / 180
+        fov_up = range_fov[2] * np.pi / 180
+        fov_left = range_fov[1] * np.pi / 180
+        fov_right = range_fov[3] * np.pi / 180
         fov_x = (range_fov[2] - range_fov[0]) * np.pi / 180
         fov_y = (range_fov[3] - range_fov[1]) * np.pi / 180
+        mask = (pit_voxel >= fov_down) & (pit_voxel < fov_up) & (yaw_voxel >= fov_left) & (yaw_voxel < fov_right)
 
-        voxel_x = ((yaw_voxel + abs(fov_left)) / fov_x) * range_shape[1]
-        voxel_y = (1.0 - (pit_voxel + abs(fov_down)) / fov_y) * range_shape[0]
-
-        mask = (voxel_x >= 0) & (voxel_x < range_shape[1]) & (voxel_y >= 0) & (voxel_y < range_shape[0])
-        voxel_x[~mask] = 0
-        voxel_y[~mask] = 0
+        voxel_x = (1.0 - (pit_voxel + abs(fov_down)) / fov_x) * range_shape[0]
+        voxel_y = ((yaw_voxel + abs(fov_left)) / fov_y) * range_shape[1]
+        voxel_x[~mask], voxel_y[~mask] = 0, 0
 
         self.voxel_x = torch.from_numpy(voxel_x).to(torch.int32)
         self.voxel_y = torch.from_numpy(voxel_y).to(torch.int32)
         self.mask = torch.from_numpy(mask).to(torch.bool)
+
         self.grid_shape = grid_shape
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
         self.fuse_conv = self.make_conv_layer(32, 32)
 
-        if pts_fusion_layer is not None:
-            self.pts_fusion_layer = MODELS.build(pts_fusion_layer)
-        if img_fusion_layer is not None:
-            self.img_fusion_layer = MODELS.build(img_fusion_layer)
+        if fusion_layer is not None:
+            self.fusion_layer = MODELS.build(fusion_layer)
 
     def make_conv_layer(self, in_channels: int, out_channels: int) -> None:  # two conv blocks in beginning
         return nn.Sequential(
@@ -75,8 +74,9 @@ class FusionNet(BaseModule):
     def forward(self, bev_fea: Tensor, range_fea: Tensor):
         self.voxel_x = self.voxel_x.to(range_fea.device)
         self.voxel_y = self.voxel_y.to(range_fea.device)
+        range_fea_3d = range_fea[:, :, self.voxel_x, self.voxel_y]
+
         self.mask = self.mask.to(range_fea.device)
-        range_fea_3d = range_fea[:, :, self.voxel_y, self.voxel_x]
         range_fea_3d[:, :, ~self.mask] = 0
         range_fea_3d = range_fea_3d.permute(0, 1, 4, 2, 3).contiguous()
 

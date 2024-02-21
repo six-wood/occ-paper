@@ -7,17 +7,18 @@ from projects.occ_paper.mmdet3d_plugin.models.head import DenseSscHead
 from projects.occ_paper.mmdet3d_plugin.models.data_preprocessor import SccDataPreprocessor
 from projects.occ_paper.mmdet3d_plugin.models.losses import OccLovaszLoss
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
+from mmdet.models.backbones.resnet import ResNet
 from mmdet3d.models.layers.fusion_layers import PointFusion
 from mmengine.config import read_base
+
+with read_base():
+    from .share_paramenter import *
 
 HSwin = dict(type=nn.Hardswish, inplace=True)
 ReLU = dict(type=nn.ReLU, inplace=True)
 syncNorm = dict(type=nn.SyncBatchNorm, momentum=0.01, eps=1e-3)
 conv2d = dict(type=nn.Conv2d)
 conv3d = dict(type=nn.Conv3d)
-
-with read_base():
-    from .share_paramenter import *
 
 model = dict(
     type=SscNet,
@@ -43,7 +44,23 @@ model = dict(
             means=(11.71279, -0.1023471, 0.4952, -1.0545, 0.2877),
             stds=(10.24, 12.295865, 9.4287, 0.8643, 0.1450),
         ),
+        mean=[102.9801, 115.9465, 122.7717],
+        std=[1.0, 1.0, 1.0],
+        bgr_to_rgb=False,
+        pad_size_divisor=32,
     ),
+    # img_backbone=dict(
+    #     type=ResNet,
+    #     depth=50,
+    #     in_channels=3,
+    #     num_stages=4,
+    #     out_indices=(2,),
+    #     frozen_stages=1,
+    #     norm_cfg=syncNorm,
+    #     norm_eval=True,
+    #     style="pytorch",
+    #     init_cfg=dict(type="Pretrained", checkpoint="torchvision://resnet50"),
+    # ),
     pts_bev_backbone=dict(
         type=BevNet,
         conv_cfg=conv2d,
@@ -65,34 +82,23 @@ model = dict(
         strides=(1, 2, 2, 2),
         dilations=(1, 1, 1, 1),
         fuse_channels=(
-            range_encoder_channel,
             fuse_channel,
+            range_out_channel,
         ),
         conv_cfg=conv2d,
         act_cfg=HSwin,
         norm_cfg=syncNorm,
     ),
-    pts_fusion_neck=dict(
+    fusion_neck=dict(
         type=FusionNet,
-        pts_fusion_layer=dict(
-            type=PointFusion,
-            img_channels=256,
-            pts_channels=64,
-            mid_channels=128,
-            out_channels=128,
-            img_levels=[0, 1, 2, 3, 4],
-            align_corners=False,
-            activate_out=True,
-            fuse_out=False,
-        ),
         conv_cfg=conv2d,
         norm_cfg=syncNorm,
         act_cfg=HSwin,
     ),
-    pts_ssc_head=dict(
+    ssc_head=dict(
         type=DenseSscHead,
-        inplanes=fuse_channel,
-        planes=fuse_channel,
+        inplanes=range_out_channel,
+        planes=head_channel,
         nbr_classes=number_classes,
         dilations_conv_list=[1, 2, 3],
         loss_ce=dict(

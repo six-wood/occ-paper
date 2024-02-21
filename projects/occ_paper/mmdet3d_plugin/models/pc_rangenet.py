@@ -19,10 +19,10 @@ class RangeNet(BaseModule):
         in_channels: int = 5,
         stem_channels: int = 64,
         num_stages: int = 3,
-        stage_blocks: Sequence[int] = (2, 2, 2),
-        out_channels: Sequence[int] = (64, 64, 64),
-        strides: Sequence[int] = (2, 2, 2),
-        dilations: Sequence[int] = (1, 1, 1),
+        stage_blocks: Sequence[int] = (3, 4, 6, 3),
+        out_channels: Sequence[int] = (64, 64, 64, 64),
+        strides: Sequence[int] = (1, 2, 2, 2),
+        dilations: Sequence[int] = (1, 1, 1, 1),
         fuse_channels: Sequence[int] = (64, 16),
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
@@ -124,6 +124,7 @@ class RangeNet(BaseModule):
     def forward(self, x: Tensor) -> Tuple[Tensor]:
         x = self.stem(x)
         outs = [x]
+
         for layer_name in self.res_layers:
             res_layer = getattr(self, layer_name)
             x = res_layer(x)

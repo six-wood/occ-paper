@@ -14,7 +14,7 @@ optim_wrapper = dict(
 )
 
 param_scheduler = [
-    dict(type=LinearLR, start_factor=0.25, by_epoch=False, begin=0, end=1000),
+    dict(type=LinearLR, start_factor=0.25, by_epoch=False, begin=0, end=100),
     dict(type=CosineAnnealingLR, begin=0, T_max=40, end=40, by_epoch=True, eta_min=1e-5),
 ]
 # training schedule for 1x

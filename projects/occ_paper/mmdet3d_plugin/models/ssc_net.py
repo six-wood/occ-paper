@@ -54,11 +54,12 @@ class SscNet(MVXTwoStageDetector):
     def __init__(
         self,
         use_pred_mask: bool = False,
+        img_backbone: Optional[dict] = None,
+        img_neck: Optional[dict] = None,
         pts_bev_backbone: Optional[dict] = None,
         pts_range_backbone: Optional[dict] = None,
-        pts_fusion_neck: Optional[dict] = None,
-        pts_ssc_head: Optional[dict] = None,
-        pts_ssc_loss: Optional[dict] = None,
+        fusion_neck: Optional[dict] = None,
+        ssc_head: Optional[dict] = None,
         train_cfg: Optional[dict] = None,
         test_cfg: Optional[dict] = None,
         init_cfg: Optional[dict] = None,
@@ -66,6 +67,8 @@ class SscNet(MVXTwoStageDetector):
         **kwargs
     ):
         super().__init__(
+            # img_backbone=img_backbone,
+            # img_neck=img_neck,
             train_cfg=train_cfg,
             test_cfg=test_cfg,
             init_cfg=init_cfg,
@@ -75,17 +78,14 @@ class SscNet(MVXTwoStageDetector):
         SSCNet architecture
         :param N: number of classes to be predicted (i.e. 12 for NYUv2)
         """
-        self.fuse_cfg = pts_fusion_neck
         if pts_bev_backbone is not None:
             self.pts_bev_backbone = MODELS.build(pts_bev_backbone)
         if pts_range_backbone is not None:
             self.pts_range_backbone = MODELS.build(pts_range_backbone)
-        if pts_fusion_neck is not None:
-            self.pts_fusion_neck = MODELS.build(pts_fusion_neck)
-        if pts_ssc_head is not None:
-            self.pts_ssc_head = MODELS.build(pts_ssc_head)
-        if pts_ssc_loss is not None:
-            self.pts_scc_loss = MODELS.build(pts_ssc_loss)
+        if fusion_neck is not None:
+            self.fusion_neck = MODELS.build(fusion_neck)
+        if ssc_head is not None:
+            self.ssc_head = MODELS.build(ssc_head)
 
         self.use_pred_mask = use_pred_mask
         self.grid_shape = self.data_preprocessor.voxel_layer.grid_shape
@@ -124,26 +124,30 @@ class SscNet(MVXTwoStageDetector):
         )  # channel first(height first)
         bev_map[coors[:, 0], coors[:, 1], coors[:, 3], coors[:, 2]] = 1
         voxel_features = self.pts_bev_backbone(bev_map)  # channel first
-        if self.fuse_cfg is None:
-            return voxel_features
         range_features = self.pts_range_backbone(range_dict["range_imgs"])
-        fuse_fea = self.pts_fusion_neck(voxel_features, range_features)  # channel first
+        fuse_fea = self.fusion_neck(voxel_features, range_features)  # channel first
         return fuse_fea
 
     def loss(self, batch_inputs_dict: Dict[List, Tensor], batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
-        voxel_dict = batch_inputs_dict["voxels"]
-        range_dict = batch_inputs_dict["range_imgs"]
+        # imgs = batch_inputs_dict.get("imgs", None)
+        voxel_dict = batch_inputs_dict.get("voxels", None)
+        range_dict = batch_inputs_dict.get("range_imgs", None)
+        # batch_input_metas = [item.metainfo for item in batch_data_samples]
 
         pts_fea = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
-        losses = self.pts_ssc_head.loss(pts_fea, batch_data_samples, self.train_cfg)
+        # img_fea = self.extract_img_feat(imgs, batch_input_metas)
+        losses = self.ssc_head.loss(pts_fea, batch_data_samples, self.train_cfg)
         return losses
 
     def predict(self, batch_inputs_dict, batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
-        voxel_dict = batch_inputs_dict["voxels"]
-        range_dict = batch_inputs_dict["range_imgs"]
+        # imgs = batch_inputs_dict.get("imgs", None)
+        voxel_dict = batch_inputs_dict.get("voxels", None)
+        range_dict = batch_inputs_dict.get("range_imgs", None)
+        # batch_input_metas = [item.metainfo for item in batch_data_samples]
 
         pts_fea = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
-        seg_logits = self.pts_ssc_head.predict(pts_fea, batch_data_samples)
+        # img_fea = self.extract_img_feat(imgs, batch_input_metas)
+        seg_logits = self.ssc_head.predict(pts_fea, batch_data_samples)
         results = self.postprocess_result(seg_logits, batch_data_samples)
         return results
 
@@ -214,7 +218,7 @@ class SscNet(MVXTwoStageDetector):
         range_dict = batch_inputs_dict["range_imgs"]
 
         pts_fea = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
-        seg_logits = self.pts_ssc_head.predict(pts_fea, batch_data_samples)
+        seg_logits = self.ssc_head.predict(pts_fea, batch_data_samples)
         seg_pred = seg_logits.argmax(dim=1).cpu().numpy()
         if self.use_pred_mask:
             seg_pred[:, ~self.mask] = 0
