@@ -10,10 +10,10 @@ scale = "1_1"
 ignore_index = 255
 free_index = 0
 number_classes = 20
-# class_weight = [0.45, 0.55]
-range_encoder_channel = 64
-fuse_channel = 64
-range_out_channel = 64
+geo_class_weight = [0.446, 0.505]
+range_encoder_channel = 128
+fuse_channel = 256
+range_out_channel = 128
 head_channel = 32
 
 

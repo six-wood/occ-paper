@@ -5,11 +5,13 @@ from torch import Tensor
 from mmengine.model import BaseModule
 from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
-from typing import Optional
+from typing import Optional, List
 from mmdet3d.registry import MODELS
 from mmcv.cnn.bricks import DropPath
 from functools import partial
+from mmseg.models.decode_heads.aspp_head import ASPPModule
 import torch.utils.checkpoint as cp
+
 
 act_layer = nn.ReLU(inplace=True)
 
@@ -136,3 +138,58 @@ class ResBlock(BaseModule):
         out += identity
         out = self.relu(out)
         return out
+
+
+class ASPPBlock(BaseModule):
+    """Rethinking Atrous Convolution for Semantic Image Segmentation.
+
+    This head is the implementation of `DeepLabV3
+    <https://arxiv.org/abs/1706.05587>`_.
+
+    Args:
+        dilations (tuple[int]): Dilation rates for ASPP module.
+            Default: (1, 6, 12, 18).
+    """
+
+    def __init__(
+        self,
+        dilations=(1, 2, 3),
+        in_channels=1,
+        channels=8,
+        conv_cfg=None,
+        norm_cfg=None,
+        act_cfg=None,
+        **kwargs,
+    ):
+        super().__init__()
+        assert isinstance(dilations, (list, tuple))
+        self.dilations = dilations
+        self.in_channels = in_channels
+        self.channels = channels
+        self.conv_cfg = conv_cfg
+        self.norm_cfg = norm_cfg
+        self.act_cfg = act_cfg
+
+        self.aspp_modules = ASPPModule(
+            dilations, self.in_channels, self.channels, conv_cfg=self.conv_cfg, norm_cfg=self.norm_cfg, act_cfg=self.act_cfg
+        )
+        self.bottleneck = ConvModule(
+            (len(dilations) + 1) * self.channels, self.channels, 3, padding=1, conv_cfg=self.conv_cfg, norm_cfg=self.norm_cfg, act_cfg=self.act_cfg
+        )
+
+    def forward(self, x):
+        """Forward function for feature maps before classifying each pixel with
+        ``self.cls_seg`` fc.
+
+        Args:
+            inputs (list[Tensor]): List of multi-level img features.
+
+        Returns:
+            feats (Tensor): A tensor of shape (batch_size, self.channels,
+                H, W) which is feature map for last layer of decoder head.
+        """
+        aspp_outs = [x]
+        aspp_outs.extend(self.aspp_modules(x))
+        aspp_outs = torch.cat(aspp_outs, dim=1)
+        feats = self.bottleneck(aspp_outs)
+        return feats

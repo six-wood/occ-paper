@@ -101,6 +101,23 @@ class SemkittiRangeView:
 
         return proj_image
 
+    def get_range_view_coord(self, points: torch.Tensor) -> dict:
+        # get depth of all points
+        depth = torch.norm(points[:, :, :3], p=2, dim=-1)
+
+        # get angles of all points
+        yaw = -torch.arctan2(points[:, :, 1], points[:, :, 0])
+        pitch = torch.arcsin(points[:, :, 2] / depth)
+
+        # get projection in image coords
+        proj_x = (yaw + abs(self.fov_left)) / self.fov_x
+        proj_y = 1.0 - (pitch + abs(self.fov_down)) / self.fov_y
+
+        # scale to image size using angular resolution
+        proj_x *= self.W
+        proj_y *= self.H
+        return torch.stack([proj_y, proj_x], dim=-1)
+
 
 @MODELS.register_module()
 class SccDataPreprocessor(Det3DDataPreprocessor):

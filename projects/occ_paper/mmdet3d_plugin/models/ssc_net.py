@@ -125,8 +125,8 @@ class SscNet(MVXTwoStageDetector):
         bev_map[coors[:, 0], coors[:, 1], coors[:, 3], coors[:, 2]] = 1
         voxel_features = self.pts_bev_backbone(bev_map)  # channel first
         range_features = self.pts_range_backbone(range_dict["range_imgs"])
-        fuse_fea = self.fusion_neck(voxel_features, range_features)  # channel first
-        return fuse_fea
+        geo_fea, sem_fea, sc_query = self.fusion_neck(voxel_features, range_features)  # channel first
+        return geo_fea, sem_fea, sc_query
 
     def loss(self, batch_inputs_dict: Dict[List, Tensor], batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
         # imgs = batch_inputs_dict.get("imgs", None)
@@ -134,9 +134,9 @@ class SscNet(MVXTwoStageDetector):
         range_dict = batch_inputs_dict.get("range_imgs", None)
         # batch_input_metas = [item.metainfo for item in batch_data_samples]
 
-        pts_fea = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
+        geo_fea, sem_fea, sc_query = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
-        losses = self.ssc_head.loss(pts_fea, batch_data_samples, self.train_cfg)
+        losses = self.ssc_head.loss(geo_fea, sem_fea, sc_query, batch_data_samples, self.train_cfg)
         return losses
 
     def predict(self, batch_inputs_dict, batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
@@ -145,13 +145,13 @@ class SscNet(MVXTwoStageDetector):
         range_dict = batch_inputs_dict.get("range_imgs", None)
         # batch_input_metas = [item.metainfo for item in batch_data_samples]
 
-        pts_fea = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
+        geo_fea, sem_fea, sc_query = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
-        seg_logits = self.ssc_head.predict(pts_fea, batch_data_samples)
-        results = self.postprocess_result(seg_logits, batch_data_samples)
+        geo_logits, sem_logits = self.ssc_head.predict(geo_fea, sem_fea, sc_query, batch_data_samples)
+        results = self.postprocess_result(geo_logits, sem_logits, sc_query, batch_data_samples)
         return results
 
-    def postprocess_result(self, seg_logits: List[Tensor], batch_data_samples):
+    def postprocess_result(self, geo_logits: Tensor, sem_logits: Tensor, sc_query: Tensor, batch_data_samples):
         """Convert results list to `Det3DDataSample`.
 
         Args:
@@ -170,14 +170,22 @@ class SscNet(MVXTwoStageDetector):
             - ``pts_seg_logits`` (PointData): Predicted logits of 3D semantic
               segmentation before normalization.
         """
-        seg_pred = seg_logits.argmax(dim=1).cpu().numpy()
-
+        # TODO only geometry result now
         gt_semantic_segs = [data_sample.gt_pts_seg.voxel_label.long() for data_sample in batch_data_samples]
         seg_true = torch.stack(gt_semantic_segs, dim=0).cpu().numpy()
+        B, H, W, Z = seg_true.shape
+        # sem_pred = sem_logits.argmax(dim=1)
+        # sem_pred_out = torch.zeros((B, H * W * Z), dtype=sem_pred.dtype, device=sem_pred.device)
+        # sem_pred_out.scatter_(1, sc_query, sem_pred)
+        # sem_pred_out = sem_pred_out.view(B, H, W, Z)
+        # sem_pred_out = sem_pred_out.cpu().numpy()
+
+        geo_pred = geo_logits.argmax(dim=1).cpu().numpy()
+
         if self.use_pred_mask:
-            seg_pred[:, ~self.mask] = 0
+            geo_pred = np.where(self.mask[None, :], geo_pred, 0)
         result = dict()
-        result["y_pred"] = seg_pred
+        result["y_pred"] = geo_pred
         result["y_true"] = seg_true
         result = list([result])
         return result
@@ -221,7 +229,7 @@ class SscNet(MVXTwoStageDetector):
         seg_logits = self.ssc_head.predict(pts_fea, batch_data_samples)
         seg_pred = seg_logits.argmax(dim=1).cpu().numpy()
         if self.use_pred_mask:
-            seg_pred[:, ~self.mask] = 0
+            seg_pred = np.where(self.mask[None, :], seg_pred, 0)
         pred_pc = self.occupied_voxels_to_pc(seg_pred)
         pred_sem = pred_pc[:, 3].astype(np.int32)
         pred_geo = pred_pc[:, :3]

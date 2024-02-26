@@ -91,7 +91,7 @@ model = dict(
     ),
     fusion_neck=dict(
         type=FusionNet,
-        conv_cfg=conv2d,
+        conv_cfg=conv3d,
         norm_cfg=syncNorm,
         act_cfg=HSwin,
     ),
@@ -101,7 +101,7 @@ model = dict(
         planes=head_channel,
         nbr_classes=number_classes,
         dilations_conv_list=[1, 2, 3],
-        loss_ce=dict(
+        loss_sem=dict(
             type=CrossEntropyLoss,
             class_weight=semantickitti_class_weight,
             loss_weight=1.0,

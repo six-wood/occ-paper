@@ -103,13 +103,11 @@ class SSCMetric(BaseMetric):
         prefix: Optional[str] = None,
         pklfile_prefix: str = None,
         submission_prefix: str = None,
-        ignore_index: List = None,
         **kwargs,
     ):
         super().__init__(prefix=prefix, collect_device=collect_device)
         self.pklfile_prefix = pklfile_prefix
         self.submission_prefix = submission_prefix
-        self.ignore_index = ignore_index
 
     def get_score_completion(self, predict, target, nonempty=None):
         predict = np.copy(predict)
@@ -218,18 +216,16 @@ class SSCMetric(BaseMetric):
             pred_seg = seg_preds[i].astype(np.int64)
 
             # filter out ignored points
-            for index in ignore_index:
-                pred_seg[pred_seg == index] = -1
-                gt_seg[gt_seg == index] = -1
+            pred_seg[gt_seg == ignore_index] = -1
+            gt_seg[gt_seg == ignore_index] = -1
 
             # calculate one instance result
             hist_list.append(fast_hist(pred_seg, gt_seg, num_classes))
 
         iou = per_class_iou(sum(hist_list))
         # if ignore_index is in iou, replace it with nan
-        for index in ignore_index:
-            if index < len(iou):
-                iou[index] = np.nan
+        if ignore_index < len(iou):
+            iou[ignore_index] = np.nan
         miou = np.nanmean(iou)
         acc = get_acc(sum(hist_list))
         acc_cls = get_acc_cls(sum(hist_list))
@@ -280,6 +276,7 @@ class SSCMetric(BaseMetric):
             return None
 
         label2cat = self.dataset_meta["label2cat"]
+        ignore_index = self.dataset_meta["ignore_index"]
 
         gt_ssc_masks = []
         pred_ssc_masks = []
@@ -300,7 +297,7 @@ class SSCMetric(BaseMetric):
             gt_ssc_masks,
             pred_ssc_masks,
             label2cat,
-            self.ignore_index,
+            ignore_index,
             completion_iou=completion_iou,
             logger=logger,
         )
