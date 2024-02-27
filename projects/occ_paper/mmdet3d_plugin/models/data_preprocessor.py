@@ -39,12 +39,12 @@ class SemkittiRangeView:
         self.stds = torch.Tensor(stds)
         self.ignore_index = ignore_index
 
-    def ranglize(self, input: list):
+    def ranglize(self, input: list) -> dict:
         range_dict = {}
         range_dict["range_imgs"] = torch.cat([self.transform(res).unsqueeze(0).permute(0, 3, 1, 2) for res in input], dim=0)
         return range_dict
 
-    def transform(self, points: torch.Tensor) -> dict:
+    def transform(self, points: torch.Tensor) -> torch.Tensor:
         device = points.device
         self.means = self.means.to(device)
         self.stds = self.stds.to(device)
@@ -101,7 +101,7 @@ class SemkittiRangeView:
 
         return proj_image
 
-    def get_range_view_coord(self, points: torch.Tensor) -> dict:
+    def get_range_norm_coord(self, points: torch.Tensor) -> torch.Tensor:
         # get depth of all points
         depth = torch.norm(points[:, :, :3], p=2, dim=-1)
 
@@ -113,9 +113,6 @@ class SemkittiRangeView:
         proj_x = (yaw + abs(self.fov_left)) / self.fov_x
         proj_y = 1.0 - (pitch + abs(self.fov_down)) / self.fov_y
 
-        # scale to image size using angular resolution
-        proj_x *= self.W
-        proj_y *= self.H
         return torch.stack([proj_y, proj_x], dim=-1)
 
 

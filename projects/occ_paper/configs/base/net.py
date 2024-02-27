@@ -9,6 +9,7 @@ from projects.occ_paper.mmdet3d_plugin.models.losses import OccLovaszLoss
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
 from mmdet.models.backbones.resnet import ResNet
 from mmdet3d.models.layers.fusion_layers import PointFusion
+from mmdet3d.models.backbones import MinkUNetBackbone
 from mmengine.config import read_base
 
 with read_base():
@@ -97,10 +98,25 @@ model = dict(
     ),
     ssc_head=dict(
         type=DenseSscHead,
-        inplanes=range_out_channel,
-        planes=head_channel,
-        nbr_classes=number_classes,
-        dilations_conv_list=[1, 2, 3],
+        seg_channels=128,
+        num_classes=num_classes,
+        sem_sparse_backbone=dict(
+            type=MinkUNetBackbone,
+            in_channels=128,
+            num_stages=2,
+            base_channels=128,
+            encoder_channels=[128, 256],
+            encoder_blocks=[2, 2],
+            decoder_channels=[256, 128],
+            decoder_blocks=[2, 2],
+            block_type="basic",
+            sparseconv_backend="torchsparse",
+        ),
+        loss_geo=dict(
+            type=CrossEntropyLoss,
+            class_weight=geo_class_weight,
+            loss_weight=1.0,
+        ),
         loss_sem=dict(
             type=CrossEntropyLoss,
             class_weight=semantickitti_class_weight,
@@ -114,6 +130,7 @@ model = dict(
             loss_weight=1.0,
         ),
         ignore_index=ignore_index,
+        free_index=free_index,
         conv_cfg=conv3d,
         norm_cfg=syncNorm,
         act_cfg=HSwin,

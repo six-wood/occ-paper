@@ -21,11 +21,11 @@ val_dataloader.update(batch_size=4)
 test_dataloader.update(batch_size=4)
 
 # # debug settings
-# train_dataloader.update(dataset=dict(indices=50))
-# val_dataloader.update(dataset=dict(indices=50))
-# train_dataloader.update(batch_size=1)
-# val_dataloader.update(batch_size=1)
-# test_dataloader.update(batch_size=1)
+train_dataloader.update(dataset=dict(indices=50))
+val_dataloader.update(dataset=dict(indices=50))
+train_dataloader.update(batch_size=1)
+val_dataloader.update(batch_size=1)
+test_dataloader.update(batch_size=1)
 
 # visualization settings
 vis_backends = [
@@ -33,5 +33,3 @@ vis_backends = [
     # dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="dense-baseline")),
 ]
 visualizer = dict(type=OccLocalVisualizer, vis_backends=vis_backends, name="visualizer", ssc_show_dir="outputs/visualizer")
-
-# optimizer

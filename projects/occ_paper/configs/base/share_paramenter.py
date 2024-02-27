@@ -9,7 +9,7 @@ scale = "1_1"
 # loss parameters
 ignore_index = 255
 free_index = 0
-number_classes = 20
+num_classes = 20
 geo_class_weight = [0.446, 0.505]
 range_encoder_channel = 128
 fuse_channel = 256

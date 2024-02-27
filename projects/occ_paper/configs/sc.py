@@ -89,7 +89,7 @@ train_split.update(dict(metainfo=metainfo, pipeline=train_pipeline))
 val_split.update(dict(metainfo=metainfo, pipeline=val_pipeline))
 test_split.update(dict(metainfo=metainfo, pipeline=test_pipeline))
 
-train_dataloader.update(dict(dataset=train_split, batch_size=8))
+train_dataloader.update(dict(dataset=train_split, batch_size=4))
 val_dataloader.update(dict(dataset=val_split, batch_size=4))
 test_dataloader.update(dict(dataset=test_split, batch_size=4))
 
@@ -99,22 +99,6 @@ vis_backends = [
     # dict(type=WandbVisBackend, init_kwargs=dict(project="sc", name="baseline")),
 ]
 visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
-
-# model settings
-model.update(
-    dict(
-        ssc_head=dict(
-            nbr_classes=2,
-            loss_geo=dict(
-                type=CrossEntropyLoss,
-                class_weight=geo_class_weight,
-                loss_weight=1.0,
-            ),
-            loss_sem=None,
-            loss_lovasz=None,
-        ),
-    )
-)
 
 # debug settings
 # train_dataloader.update(dataset=dict(indices=100))

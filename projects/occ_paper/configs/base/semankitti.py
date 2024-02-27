@@ -125,7 +125,6 @@ train_pipeline = [
     ),
     dict(
         type=LoadVoxelLabelFromFile,
-        task="ssc",
         scale=scale,
         ignore_index=ignore_index,
         grid_size=grid_size,
@@ -161,7 +160,6 @@ val_pipeline = [
     ),
     dict(
         type=LoadVoxelLabelFromFile,
-        task="ssc",
         scale=scale,
         ignore_index=ignore_index,
         grid_size=grid_size,

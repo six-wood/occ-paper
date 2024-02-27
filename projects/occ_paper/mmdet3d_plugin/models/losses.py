@@ -54,8 +54,8 @@ def flatten_probs(probs: torch.Tensor, labels: torch.Tensor, ignore_index: Optio
     if probs.dim() != 2:  # for input with P*C
         if probs.dim() == 3:
             # assumes output of a sigmoid layer
-            B, H, W = probs.size()
-            probs = probs.view(B, 1, H, W).permute(0, 2, 3, 1).contiguous().view(-1, C)  # B*H*W, C=P,C
+            B, C, N = probs.size()
+            probs = probs.permute(0, 2, 1).contiguous().view(-1, C)  # B*H*W, C=P,C
         if probs.dim() == 4:
             # assumes output of a softmax layer
             B, C, H, W = probs.size()

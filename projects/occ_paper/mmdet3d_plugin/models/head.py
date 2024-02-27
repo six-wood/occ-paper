@@ -11,6 +11,7 @@ from torch import nn as nn
 from mmdet3d.registry import MODELS
 from mmdet3d.utils.typing_utils import ConfigType
 from mmdet3d.structures.det3d_data_sample import SampleList
+
 from mmcv.cnn import build_activation_layer, build_conv_layer, build_norm_layer
 from mmdet.models.dense_heads import MaskFormerHead
 
@@ -26,24 +27,29 @@ class DenseSscHead(BaseModule):
 
     def __init__(
         self,
-        inplanes,
-        planes,
-        nbr_classes,
-        dilations_conv_list,
-        conv_cfg: ConfigType = dict(type="Conv3d"),
-        norm_cfg: ConfigType = dict(type="BN3d"),
-        act_cfg: ConfigType = dict(type="ReLU"),
+        num_classes: int,
+        seg_channels: int,
+        sem_sparse_backbone: ConfigType = None,
         # loss_focal: ConfigType = None,
         loss_geo: ConfigType = None,
         loss_sem: ConfigType = None,
         loss_lovasz: ConfigType = None,
+        conv_cfg: ConfigType = dict(type="Conv3d"),
+        norm_cfg: ConfigType = dict(type="BN3d"),
+        act_cfg: ConfigType = dict(type="ReLU"),
         ignore_index: int = 255,
+        free_index: int = 0,
     ):
         super(DenseSscHead, self).__init__()
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
         self.ignore_index = ignore_index
+        self.free_index = free_index
+
+        if sem_sparse_backbone is not None:
+            self.sem_sparse_backbone = MODELS.build(sem_sparse_backbone)
+        self.conv_seg = self.build_conv_seg(channels=seg_channels, num_classes=num_classes, kernel_size=1)
         # if loss_focal is not None:
         #     self.loss_focal = MODELS.build(loss_focal)
         if loss_geo is not None:
@@ -53,11 +59,18 @@ class DenseSscHead(BaseModule):
         if loss_lovasz is not None:
             self.loss_lovasz = MODELS.build(loss_lovasz)
 
-    def sem_forward(self, x: Tensor):
-        pass
+    def build_conv_seg(self, channels: int, num_classes: int, kernel_size: int) -> nn.Module:
+        """Build Convolutional Segmentation Layers."""
+        return nn.Conv1d(channels, num_classes, kernel_size=kernel_size)
 
-    def geo_forward(self, x: Tensor):
-        return x  # B, H, W, Z, C
+    def sem_forward(self, fea: Tensor = None, coor: Tensor = None) -> Tensor:
+        B, C, N = fea.shape
+        fea = fea.permute(0, 2, 1).reshape(-1, C)
+        batch_indices = torch.arange(B, device=fea.device).unsqueeze(1).expand(-1, N).reshape(-1).unsqueeze(1)
+        coor = coor.reshape(-1, 3)
+        coor = torch.cat([coor, batch_indices], dim=1).to(torch.int32)
+        x = self.sem_sparse_backbone(fea, coor).reshape(B, N, C).permute(0, 2, 1)
+        return self.conv_seg(x)
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
         """Concat voxel-wise Groud Truth."""
@@ -65,7 +78,7 @@ class DenseSscHead(BaseModule):
 
         return torch.stack(gt_semantic_segs, dim=0)
 
-    def loss_by_feat(self, geo_logits: Tensor, sem_logits: Tensor, batch_data_samples: SampleList, sc_query) -> Dict[str, Tensor]:
+    def loss_by_feat(self, geo_logits: Tensor, sem_logits: Tensor, sc_query_grid_coor: Tensor, batch_data_samples: SampleList) -> Dict[str, Tensor]:
         """Compute semantic segmentation loss.
 
         Args:
@@ -80,15 +93,15 @@ class DenseSscHead(BaseModule):
         """
 
         seg_label = self._stack_batch_gt(batch_data_samples)
-        B = seg_label.shape[0]
-        sem_label = seg_label.view(B, -1)
-        sem_label = sem_label.gather(1, sc_query)
+        geo_label = torch.where(torch.logical_and(seg_label != self.free_index, seg_label != self.ignore_index), 1, seg_label)
+        batch_indices = torch.arange(geo_label.size(0), device=geo_label.device).unsqueeze(1).expand(-1, sc_query_grid_coor.shape[1])
+        sem_label = seg_label[batch_indices, sc_query_grid_coor[:, :, 0], sc_query_grid_coor[:, :, 1], sc_query_grid_coor[:, :, 2]]
         # TODO error change dim
         loss = dict()
         # if hasattr(self, "loss_focal"):
         #     loss["loss_focal"] = self.loss_focal(seg_logit, seg_label, weight=self.class_weights, ignore_index=self.ignore_index)
         if hasattr(self, "loss_geo"):
-            loss["loss_geo"] = self.loss_geo(geo_logits, seg_label, ignore_index=self.ignore_index)
+            loss["loss_geo"] = self.loss_geo(geo_logits, geo_label, ignore_index=self.ignore_index)
         if hasattr(self, "loss_sem"):
             loss["loss_sem"] = self.loss_sem(sem_logits, sem_label, ignore_index=self.ignore_index)
         if hasattr(self, "loss_lovasz"):
@@ -96,7 +109,7 @@ class DenseSscHead(BaseModule):
         return loss
 
     def loss(
-        self, geo_fea: Tensor, sem_fea: Tensor, sc_query: Tensor, batch_data_samples: SampleList, train_cfg: ConfigType = None
+        self, geo_fea: Tensor, sem_fea: Tensor, sc_query_grid_coor: Tensor, batch_data_samples: SampleList, train_cfg: ConfigType = None
     ) -> Dict[str, Tensor]:
         """Forward function for training.
 
@@ -110,12 +123,12 @@ class DenseSscHead(BaseModule):
         Returns:
             Dict[str, Tensor]: A dictionary of loss components.
         """
-        sem_logits = self.sem_forward(sem_fea)
-        geo_logits = self.geo_forward(geo_fea)
-        losses = self.loss_by_feat(geo_logits, sem_logits, batch_data_samples, sc_query)
+        geo_logits = geo_fea
+        sem_logits = self.sem_forward(sem_fea, sc_query_grid_coor)
+        losses = self.loss_by_feat(geo_logits, sem_logits, sc_query_grid_coor, batch_data_samples)
         return losses
 
-    def predict(self, geo_fea: Tensor, sem_fea: Tensor, sc_query: Tensor = None, batch_data_samples: SampleList = None) -> List[Tensor]:
+    def predict(self, geo_fea: Tensor, sem_fea: Tensor, sc_query_grid_coor: Tensor = None, batch_data_samples: SampleList = None) -> List[Tensor]:
         """Forward function for testing.
 
         Args:
@@ -127,6 +140,6 @@ class DenseSscHead(BaseModule):
             List[Tensor]: The segmentation prediction mask of each batch.
         """
 
-        geo_logits = self.geo_forward(geo_fea)
-        sem_logits = self.sem_forward(sem_fea)
+        geo_logits = geo_fea
+        sem_logits = self.sem_forward(sem_fea, sc_query_grid_coor)
         return geo_logits, sem_logits

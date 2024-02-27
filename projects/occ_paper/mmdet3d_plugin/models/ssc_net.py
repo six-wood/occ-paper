@@ -9,44 +9,7 @@ from mmdet3d.structures import PointData
 from mmdet3d.structures import Det3DDataSample
 from typing import Dict, List, Optional, Sequence, Union
 from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
-
-
-def compute_visibility_mask(
-    center: list = [0, 0, 0],
-    pc_range: list = [0, -25.6, -2.0, 51.2, 25.6, 4.4],
-    voxel_size: list = [0.2, 0.2, 0.2],
-    fov: list = [-25.0, 3.0],
-) -> np.ndarray:
-    # 计算网格大小
-    pc_range = np.array(pc_range)
-    voxel_size = np.array(voxel_size)
-    fov = np.array(fov)
-    grid_size = np.round((pc_range[3:] - pc_range[:3]) / voxel_size).astype(np.int32)
-
-    # 确定每个轴的范围
-    x_range = np.linspace(pc_range[0] + voxel_size[0] / 2, pc_range[3] - voxel_size[0] / 2, grid_size[0])
-    y_range = np.linspace(pc_range[1] + voxel_size[1] / 2, pc_range[4] - voxel_size[1] / 2, grid_size[1])
-    z_range = np.linspace(pc_range[2] + voxel_size[2] / 2, pc_range[5] - voxel_size[2] / 2, grid_size[2])
-
-    # 生成三维网格
-    xx, yy, zz = np.meshgrid(x_range, y_range, z_range, indexing="ij")
-
-    # 调整网格以反映中心点的偏移
-    xx -= center[0]
-    yy -= center[1]
-    zz -= center[2]
-
-    # 计算每个点的俯仰角
-    r = np.sqrt(xx**2 + yy**2 + zz**2)
-    pitch_angles = np.arcsin(zz / r)
-
-    # 转换为度
-    pitch_angles_degrees = np.degrees(pitch_angles)
-
-    # 确定每个体素是否在视场范围内
-    visibility_mask = (pitch_angles_degrees >= fov[0]) & (pitch_angles_degrees <= fov[1])
-
-    return visibility_mask
+from .moudle import compute_visibility_mask
 
 
 @MODELS.register_module()
@@ -93,7 +56,7 @@ class SscNet(MVXTwoStageDetector):
         self.voxel_size = self.data_preprocessor.voxel_layer.voxel_size
         self.fov = [self.data_preprocessor.range_layer.fov_down, self.data_preprocessor.range_layer.fov_up]
         if self.use_pred_mask:
-            self.mask = compute_visibility_mask(
+            self.visibility_mask = compute_visibility_mask(
                 center=[0, 0, 0],
                 pc_range=self.pc_range,
                 voxel_size=self.voxel_size,
@@ -125,8 +88,8 @@ class SscNet(MVXTwoStageDetector):
         bev_map[coors[:, 0], coors[:, 1], coors[:, 3], coors[:, 2]] = 1
         voxel_features = self.pts_bev_backbone(bev_map)  # channel first
         range_features = self.pts_range_backbone(range_dict["range_imgs"])
-        geo_fea, sem_fea, sc_query = self.fusion_neck(voxel_features, range_features)  # channel first
-        return geo_fea, sem_fea, sc_query
+        geo_fea, sem_fea, sc_query_grid_coor = self.fusion_neck(voxel_features, range_features)  # channel first
+        return geo_fea, sem_fea, sc_query_grid_coor
 
     def loss(self, batch_inputs_dict: Dict[List, Tensor], batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
         # imgs = batch_inputs_dict.get("imgs", None)
@@ -134,9 +97,9 @@ class SscNet(MVXTwoStageDetector):
         range_dict = batch_inputs_dict.get("range_imgs", None)
         # batch_input_metas = [item.metainfo for item in batch_data_samples]
 
-        geo_fea, sem_fea, sc_query = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
+        geo_fea, sem_fea, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
-        losses = self.ssc_head.loss(geo_fea, sem_fea, sc_query, batch_data_samples, self.train_cfg)
+        losses = self.ssc_head.loss(geo_fea, sem_fea, sc_query_grid_coor, batch_data_samples, self.train_cfg)
         return losses
 
     def predict(self, batch_inputs_dict, batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
@@ -145,13 +108,13 @@ class SscNet(MVXTwoStageDetector):
         range_dict = batch_inputs_dict.get("range_imgs", None)
         # batch_input_metas = [item.metainfo for item in batch_data_samples]
 
-        geo_fea, sem_fea, sc_query = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
+        geo_fea, sem_fea, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
-        geo_logits, sem_logits = self.ssc_head.predict(geo_fea, sem_fea, sc_query, batch_data_samples)
-        results = self.postprocess_result(geo_logits, sem_logits, sc_query, batch_data_samples)
+        geo_logits, sem_logits = self.ssc_head.predict(geo_fea, sem_fea, sc_query_grid_coor, batch_data_samples)
+        results = self.postprocess_result(geo_logits, sem_logits, sc_query_grid_coor, batch_data_samples)
         return results
 
-    def postprocess_result(self, geo_logits: Tensor, sem_logits: Tensor, sc_query: Tensor, batch_data_samples):
+    def postprocess_result(self, geo_logits: Tensor, sem_logits: Tensor, sc_query_grid_coor: Tensor, batch_data_samples):
         """Convert results list to `Det3DDataSample`.
 
         Args:
@@ -170,22 +133,29 @@ class SscNet(MVXTwoStageDetector):
             - ``pts_seg_logits`` (PointData): Predicted logits of 3D semantic
               segmentation before normalization.
         """
-        # TODO only geometry result now
-        gt_semantic_segs = [data_sample.gt_pts_seg.voxel_label.long() for data_sample in batch_data_samples]
+
+        B = sem_logits.shape[0]
+        unknown_idx = sem_logits.shape[1]
+        geo_pred = unknown_idx * geo_logits.argmax(dim=1)
         seg_true = torch.stack(gt_semantic_segs, dim=0).cpu().numpy()
-        B, H, W, Z = seg_true.shape
-        # sem_pred = sem_logits.argmax(dim=1)
+        gt_semantic_segs = [data_sample.gt_pts_seg.voxel_label.long() for data_sample in batch_data_samples]
+        sem_pred = sem_logits.argmax(dim=1)
+        batch_indices = torch.arange(B, device=geo_pred.device).unsqueeze(1).expand(-1, sc_query_grid_coor.shape[1])
+        index = torch.zeros_like(geo_pred, dtype=torch.int64)
+        index[batch_indices, sc_query_grid_coor[:, :, 0], sc_query_grid_coor[:, :, 1], sc_query_grid_coor[:, :, 2]] = 1
+        mask = index.bool()
+        geo_pred[mask] = sem_pred
+        pred = geo_pred.cpu().numpy()
+
         # sem_pred_out = torch.zeros((B, H * W * Z), dtype=sem_pred.dtype, device=sem_pred.device)
-        # sem_pred_out.scatter_(1, sc_query, sem_pred)
+        # sem_pred_out.scatter_(1, sc_query_grid_coor, sem_pred)
         # sem_pred_out = sem_pred_out.view(B, H, W, Z)
         # sem_pred_out = sem_pred_out.cpu().numpy()
 
-        geo_pred = geo_logits.argmax(dim=1).cpu().numpy()
-
         if self.use_pred_mask:
-            geo_pred = np.where(self.mask[None, :], geo_pred, 0)
+            pred = np.where(self.visibility_mask[None, :], pred, 0)
         result = dict()
-        result["y_pred"] = geo_pred
+        result["y_pred"] = pred
         result["y_true"] = seg_true
         result = list([result])
         return result
@@ -229,7 +199,7 @@ class SscNet(MVXTwoStageDetector):
         seg_logits = self.ssc_head.predict(pts_fea, batch_data_samples)
         seg_pred = seg_logits.argmax(dim=1).cpu().numpy()
         if self.use_pred_mask:
-            seg_pred = np.where(self.mask[None, :], seg_pred, 0)
+            seg_pred = np.where(self.visibility_mask[None, :], seg_pred, 0)
         pred_pc = self.occupied_voxels_to_pc(seg_pred)
         pred_sem = pred_pc[:, 3].astype(np.int32)
         pred_geo = pred_pc[:, :3]
