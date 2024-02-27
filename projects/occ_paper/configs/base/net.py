@@ -110,7 +110,7 @@ model = dict(
             decoder_channels=[256, 128],
             decoder_blocks=[2, 2],
             block_type="basic",
-            sparseconv_backend="torchsparse",
+            sparseconv_backend="spconv",
         ),
         loss_geo=dict(
             type=CrossEntropyLoss,

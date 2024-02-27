@@ -60,33 +60,41 @@ class FusionNet(BaseModule):
             act_cfg=act_cfg,
         )
         self.bev_class = ConvModule(bev_planes, bev_outplanes, 1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=None)
+        # weight conv
+        self.weight_conv = ConvModule(1, 1, 1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
 
         if fusion_layer is not None:
             self.fusion_layer = MODELS.build(fusion_layer)
 
     def forward(self, bev_fea: Tensor, range_fea: Tensor):
+        # init
         B, Z, H, W = bev_fea.shape
         device = bev_fea.device
         self.visibility_mask = self.visibility_mask.to(device)
         self.voxel_size = self.voxel_size.to(device)
         self.offset = self.offset.to(device)
+
+        # geometric feature
         x = bev_fea[:, None, :, :, :]
         x = self.bev_conv0(x)
         x = self.aspp3d(x)
         x = self.bev_class(x)
-        # geometric feature
         geo_fea = torch.permute(x, (0, 1, 3, 4, 2)).contiguous()  # B, C, Z, H, W -> B, C, H, W, Z
+
         # semantic feature
         sc_prob = F.softmax(geo_fea, dim=1)[:, 1]
         sc_prob = torch.where(self.visibility_mask[None, :], sc_prob, 0)
         sc_prob = sc_prob.view(B, -1)  # B, H, W, Z -> B, H*W*Z
         _, sc_query = torch.topk(sc_prob, dim=1, k=H * W * 4, largest=True)  # rank in the range of 0 to H*W*Z
-        sc_query_grid_coor = torch.stack([sc_query // (W * Z), (sc_query % (W * Z)) // Z, (sc_query % (W * Z)) % Z], dim=2) # B, N, 3
+        sc_query_grid_coor = torch.stack([sc_query // (W * Z), (sc_query % (W * Z)) // Z, (sc_query % (W * Z)) % Z], dim=2)  # B, N, 3
         sc_query_points = sc_query_grid_coor * self.voxel_size + self.voxel_size / 2 + self.offset
         sc_query_range = self.transform_range_coord(sc_query_points).unsqueeze(1)
         sem_fea = F.grid_sample(range_fea, sc_query_range, align_corners=False).squeeze(2)  # B, C, N
-        # # test
-        # r = torch.zeros_like(x).to(torch.float32)
-        # p = F.softmax(x, dim=1)
-        # r.scatter_(2, sc_query[:, None, :].expand(-1, 2, -1), values[:, None, :].expand(-1, 2, -1))
+
+        # geo weight(for occlusion
+        batch_indices = torch.arange(B, device=device).unsqueeze(1).expand(-1, sc_query_grid_coor.shape[1])
+        sc_query_grid_coor = torch.cat([batch_indices, sc_query_grid_coor], dim=2)
+        weight = bev_fea[sc_query_grid_coor[:, :, 0], sc_query_grid_coor[:, :, 1], sc_query_grid_coor[:, :, 2], sc_query_grid_coor[:, :, 3]]
+        weight = self.weight_conv(weight.unsqueeze(1)).squeeze(1)
+
         return geo_fea, sem_fea, sc_query_grid_coor

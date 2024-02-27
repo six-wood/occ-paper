@@ -141,9 +141,8 @@ class SscNet(MVXTwoStageDetector):
         unknown_idx = sem_logits.shape[1]
         geo_pred = unknown_idx * geo_logits.argmax(dim=1)
         sem_pred = sem_logits.argmax(dim=1)
-        batch_indices = torch.arange(B, device=geo_pred.device).unsqueeze(1).expand(-1, sc_query_grid_coor.shape[1])
         index = torch.zeros_like(geo_pred, dtype=torch.int64)
-        index[batch_indices, sc_query_grid_coor[:, :, 0], sc_query_grid_coor[:, :, 1], sc_query_grid_coor[:, :, 2]] = 1
+        index[sc_query_grid_coor[:, :, 0], sc_query_grid_coor[:, :, 1], sc_query_grid_coor[:, :, 2], sc_query_grid_coor[:, :, 3]] = 1
         mask = index.bool()
         geo_pred[mask] = sem_pred
         pred = geo_pred.cpu().numpy()

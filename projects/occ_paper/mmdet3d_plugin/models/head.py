@@ -66,9 +66,7 @@ class DenseSscHead(BaseModule):
     def sem_forward(self, fea: Tensor = None, coor: Tensor = None) -> Tensor:
         B, C, N = fea.shape
         fea = fea.permute(0, 2, 1).reshape(-1, C)
-        batch_indices = torch.arange(B, device=fea.device).unsqueeze(1).expand(-1, N).reshape(-1).unsqueeze(1)
-        coor = coor.reshape(-1, 3)
-        coor = torch.cat([coor, batch_indices], dim=1).to(torch.int32)
+        coor = coor.permute(1, 2, 3, 0).contiguous().view(-1, 4)
         x = self.sem_sparse_backbone(fea, coor).reshape(B, N, C).permute(0, 2, 1)
         return self.conv_seg(x)
 
@@ -94,8 +92,7 @@ class DenseSscHead(BaseModule):
 
         seg_label = self._stack_batch_gt(batch_data_samples)
         geo_label = torch.where(torch.logical_and(seg_label != self.free_index, seg_label != self.ignore_index), 1, seg_label)
-        batch_indices = torch.arange(geo_label.size(0), device=geo_label.device).unsqueeze(1).expand(-1, sc_query_grid_coor.shape[1])
-        sem_label = seg_label[batch_indices, sc_query_grid_coor[:, :, 0], sc_query_grid_coor[:, :, 1], sc_query_grid_coor[:, :, 2]]
+        sem_label = seg_label[sc_query_grid_coor[:, :, 0], sc_query_grid_coor[:, :, 1], sc_query_grid_coor[:, :, 2], sc_query_grid_coor[:, :, 3]]
         # TODO error change dim
         loss = dict()
         # if hasattr(self, "loss_focal"):
