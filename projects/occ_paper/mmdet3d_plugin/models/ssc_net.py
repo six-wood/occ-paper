@@ -134,11 +134,12 @@ class SscNet(MVXTwoStageDetector):
               segmentation before normalization.
         """
 
-        B = sem_logits.shape[0]
+        gt_semantic_segs = [data_sample.gt_pts_seg.voxel_label.long() for data_sample in batch_data_samples]
+        seg_true = torch.stack(gt_semantic_segs, dim=0).cpu().numpy()
+
+        B = seg_true.shape[0]
         unknown_idx = sem_logits.shape[1]
         geo_pred = unknown_idx * geo_logits.argmax(dim=1)
-        seg_true = torch.stack(gt_semantic_segs, dim=0).cpu().numpy()
-        gt_semantic_segs = [data_sample.gt_pts_seg.voxel_label.long() for data_sample in batch_data_samples]
         sem_pred = sem_logits.argmax(dim=1)
         batch_indices = torch.arange(B, device=geo_pred.device).unsqueeze(1).expand(-1, sc_query_grid_coor.shape[1])
         index = torch.zeros_like(geo_pred, dtype=torch.int64)
