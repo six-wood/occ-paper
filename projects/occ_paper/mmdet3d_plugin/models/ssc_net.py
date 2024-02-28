@@ -139,18 +139,10 @@ class SscNet(MVXTwoStageDetector):
 
         B = seg_true.shape[0]
         unknown_idx = sem_logits.shape[1]
-        geo_pred = unknown_idx * geo_logits.argmax(dim=1)
+        pred = unknown_idx * geo_logits.argmax(dim=1)
         sem_pred = sem_logits.argmax(dim=1)
-        index = torch.zeros_like(geo_pred, dtype=torch.int64)
-        index[sc_query_grid_coor[:, :, 0], sc_query_grid_coor[:, :, 1], sc_query_grid_coor[:, :, 2], sc_query_grid_coor[:, :, 3]] = 1
-        mask = index.bool()
-        geo_pred[mask] = sem_pred
-        pred = geo_pred.cpu().numpy()
-
-        # sem_pred_out = torch.zeros((B, H * W * Z), dtype=sem_pred.dtype, device=sem_pred.device)
-        # sem_pred_out.scatter_(1, sc_query_grid_coor, sem_pred)
-        # sem_pred_out = sem_pred_out.view(B, H, W, Z)
-        # sem_pred_out = sem_pred_out.cpu().numpy()
+        pred[sc_query_grid_coor[:, :, 0], sc_query_grid_coor[:, :, 1], sc_query_grid_coor[:, :, 2], sc_query_grid_coor[:, :, 3]] = sem_pred
+        pred = pred.cpu().numpy()
 
         if self.use_pred_mask:
             pred = np.where(self.visibility_mask[None, :], pred, 0)
@@ -189,26 +181,27 @@ class SscNet(MVXTwoStageDetector):
         Returns:
             list: The predictions of given data.
         """
-        data = self.data_preprocessor(data, False)
-        batch_inputs_dict = data["inputs"]
-        batch_data_samples = data["data_samples"]
-        voxel_dict = batch_inputs_dict["voxels"]
-        range_dict = batch_inputs_dict["range_imgs"]
+        pass
+        # data = self.data_preprocessor(data, False)
+        # batch_inputs_dict = data["inputs"]
+        # batch_data_samples = data["data_samples"]
+        # voxel_dict = batch_inputs_dict["voxels"]
+        # range_dict = batch_inputs_dict["range_imgs"]
 
-        pts_fea = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
-        seg_logits = self.ssc_head.predict(pts_fea, batch_data_samples)
-        seg_pred = seg_logits.argmax(dim=1).cpu().numpy()
-        if self.use_pred_mask:
-            seg_pred = np.where(self.visibility_mask[None, :], seg_pred, 0)
-        pred_pc = self.occupied_voxels_to_pc(seg_pred)
-        pred_sem = pred_pc[:, 3].astype(np.int32)
-        pred_geo = pred_pc[:, :3]
+        # pts_fea = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
+        # seg_logits = self.ssc_head.predict(pts_fea, batch_data_samples)
+        # seg_pred = seg_logits.argmax(dim=1).cpu().numpy()
+        # if self.use_pred_mask:
+        #     seg_pred = np.where(self.visibility_mask[None, :], seg_pred, 0)
+        # pred_pc = self.occupied_voxels_to_pc(seg_pred)
+        # pred_sem = pred_pc[:, 3].astype(np.int32)
+        # pred_geo = pred_pc[:, :3]
 
-        for data_sample in batch_data_samples:
-            data_sample.set_data(
-                {
-                    "pred_pts_geo": pred_geo,
-                    "pred_pts_seg": PointData(**{"pts_semantic_mask": pred_sem}),
-                }
-            )
-        return batch_data_samples
+        # for data_sample in batch_data_samples:
+        #     data_sample.set_data(
+        #         {
+        #             "pred_pts_geo": pred_geo,
+        #             "pred_pts_seg": PointData(**{"pts_semantic_mask": pred_sem}),
+        #         }
+        #     )
+        # return batch_data_samples

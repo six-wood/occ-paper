@@ -11,11 +11,12 @@ ignore_index = 255
 free_index = 0
 num_classes = 20
 geo_class_weight = [0.446, 0.505]
+# model parameters
+k_scatter = 16
 range_encoder_channel = 128
 fuse_channel = 256
 range_out_channel = 128
 head_channel = 32
-
 
 semantic_kitti_class_frequencies = [
     5.41773033e09,

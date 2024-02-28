@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from mmengine.optim.optimizer.amp_optimizer_wrapper import AmpOptimWrapper
+from mmengine.optim.optimizer.optimizer_wrapper import OptimWrapper
 from mmengine.optim.scheduler.lr_scheduler import CosineAnnealingLR, LinearLR
 from mmengine.runner.loops import EpochBasedTrainLoop, TestLoop, ValLoop
 from torch.optim.adamw import AdamW
@@ -8,7 +9,7 @@ from torch.optim.adamw import AdamW
 # optimizer
 lr = 2e-4  # max learning rate
 optim_wrapper = dict(
-    type=AmpOptimWrapper,
+    type=OptimWrapper,
     optimizer=dict(type=AdamW, lr=lr, weight_decay=0.01),
     clip_grad=dict(max_norm=35, norm_type=2),
 )

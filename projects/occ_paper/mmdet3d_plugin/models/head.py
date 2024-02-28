@@ -47,8 +47,8 @@ class DenseSscHead(BaseModule):
         self.ignore_index = ignore_index
         self.free_index = free_index
 
-        if sem_sparse_backbone is not None:
-            self.sem_sparse_backbone = MODELS.build(sem_sparse_backbone)
+        # if sem_sparse_backbone is not None:
+        #     self.sem_sparse_backbone = MODELS.build(sem_sparse_backbone)
         self.conv_seg = self.build_conv_seg(channels=seg_channels, num_classes=num_classes, kernel_size=1)
         # if loss_focal is not None:
         #     self.loss_focal = MODELS.build(loss_focal)
@@ -64,11 +64,11 @@ class DenseSscHead(BaseModule):
         return nn.Conv1d(channels, num_classes, kernel_size=kernel_size)
 
     def sem_forward(self, fea: Tensor = None, coor: Tensor = None) -> Tensor:
-        B, C, N = fea.shape
-        fea = fea.permute(0, 2, 1).reshape(-1, C)
-        coor = coor.permute(1, 2, 3, 0).contiguous().view(-1, 4)
-        x = self.sem_sparse_backbone(fea, coor).reshape(B, N, C).permute(0, 2, 1)
-        return self.conv_seg(x)
+        # B, C, N = fea.shape
+        # fea = fea.permute(0, 2, 1).contiguous().view(-1, C)
+        # coor = coor.view(-1, 4)
+        # fea = self.sem_sparse_backbone(fea, coor).reshape(B, N, C).permute(0, 2, 1)
+        return self.conv_seg(fea)
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
         """Concat voxel-wise Groud Truth."""

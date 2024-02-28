@@ -9,27 +9,23 @@ with read_base():
     from .base.net import *
     from .base.semankitti import *
 
+# TODO Add the original point cloud voxel to sc (for samll target: person and so on)
 # TODO implement(copy) the focal loss in head
 # TODO Add image RandomFlip3D
-# TODO Use the officail implementation of the fuse layer(MVXTwoStageDetector)
-# TODO Change the ssc head to RPN Detection Head(MVXTwoStageDetector,despite the semantic ad geometric)
-# TODO Change to Top-K
+# TODO Use the cross attention fuse image and range feature
 
 # train settings
-train_dataloader.update(batch_size=4)
+train_dataloader.update(batch_size=2)
 val_dataloader.update(batch_size=4)
 test_dataloader.update(batch_size=4)
 
 # # debug settings
-train_dataloader.update(dataset=dict(indices=50))
-val_dataloader.update(dataset=dict(indices=50))
-train_dataloader.update(batch_size=1)
-val_dataloader.update(batch_size=1)
-test_dataloader.update(batch_size=1)
+# train_dataloader.update(dataset=dict(indices=50))
+# val_dataloader.update(dataset=dict(indices=50))
 
 # visualization settings
 vis_backends = [
     dict(type=LocalVisBackend),
-    # dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="dense-baseline")),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="baseline-16")),
 ]
 visualizer = dict(type=OccLocalVisualizer, vis_backends=vis_backends, name="visualizer", ssc_show_dir="outputs/visualizer")
