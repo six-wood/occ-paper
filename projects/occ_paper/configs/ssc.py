@@ -26,6 +26,6 @@ test_dataloader.update(batch_size=2)
 # visualization settings
 vis_backends = [
     dict(type=LocalVisBackend),
-    dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="big-minkunet(modify)-4")),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="minkunet-4")),
 ]
 visualizer = dict(type=OccLocalVisualizer, vis_backends=vis_backends, name="visualizer", ssc_show_dir="outputs/visualizer")

@@ -9,7 +9,7 @@ from mmengine.model import BaseModule
 from mmdet3d.utils import ConfigType, OptConfigType
 from mmcv.cnn import ConvModule
 from .data_preprocessor import SemkittiRangeView
-from .moudle import compute_visibility_mask
+from .utils import compute_visibility_mask
 
 
 @MODELS.register_module()

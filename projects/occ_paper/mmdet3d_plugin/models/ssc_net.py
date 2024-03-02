@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import torch.nn as nn
 import torch.nn.functional as F
 
 from torch import Tensor
@@ -9,7 +10,10 @@ from mmdet3d.structures import PointData
 from mmdet3d.structures import Det3DDataSample
 from typing import Dict, List, Optional, Sequence, Union
 from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
-from .moudle import compute_visibility_mask
+from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
+from mmdet3d.structures.det3d_data_sample import SampleList
+from mmdet3d.models.utils import add_prefix
+from .utils import compute_visibility_mask
 
 
 @MODELS.register_module()
@@ -23,11 +27,12 @@ class SscNet(MVXTwoStageDetector):
         pts_range_backbone: Optional[dict] = None,
         fusion_neck: Optional[dict] = None,
         ssc_head: Optional[dict] = None,
+        auxiliary_head: OptMultiConfig = None,
         train_cfg: Optional[dict] = None,
         test_cfg: Optional[dict] = None,
         init_cfg: Optional[dict] = None,
         data_preprocessor: Optional[dict] = None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             # img_backbone=img_backbone,
@@ -50,6 +55,9 @@ class SscNet(MVXTwoStageDetector):
         if ssc_head is not None:
             self.ssc_head = MODELS.build(ssc_head)
 
+        self.with_auxiliary_head = True if auxiliary_head is not None else False
+        self._init_auxiliary_head(auxiliary_head)
+
         self.use_pred_mask = use_pred_mask
         self.grid_shape = self.data_preprocessor.voxel_layer.grid_shape
         self.pc_range = self.data_preprocessor.voxel_layer.point_cloud_range
@@ -62,6 +70,45 @@ class SscNet(MVXTwoStageDetector):
                 voxel_size=self.voxel_size,
                 fov=self.fov,
             )
+
+    def _init_auxiliary_head(self, auxiliary_head: OptMultiConfig = None) -> None:
+        """Initialize ``auxiliary_head``."""
+        if auxiliary_head is not None:
+            if isinstance(auxiliary_head, list):
+                self.auxiliary_head = nn.ModuleList()
+                for head_cfg in auxiliary_head:
+                    self.auxiliary_head.append(MODELS.build(head_cfg))
+            else:
+                self.auxiliary_head = MODELS.build(auxiliary_head)
+
+    def _auxiliary_head_forward_train(
+        self,
+        batch_inputs_dict: dict,
+        batch_data_samples: SampleList,
+    ) -> Dict[str, Tensor]:
+        """Run forward function and calculate loss for auxiliary head in
+        training.
+
+        Args:
+            batch_input (Tensor): Input point cloud sample
+            batch_data_samples (List[:obj:`Det3DDataSample`]): The det3d data
+                samples. It usually includes information such as `metainfo` and
+                `gt_pts_seg`.
+
+        Returns:
+            Dict[str, Tensor]: A dictionary of loss components for auxiliary
+            head.
+        """
+        losses = dict()
+        if isinstance(self.auxiliary_head, nn.ModuleList):
+            for idx, aux_head in enumerate(self.auxiliary_head):
+                loss_aux = aux_head.loss(batch_inputs_dict, batch_data_samples, self.train_cfg)
+                losses.update(add_prefix(loss_aux, f"aux_{idx}"))
+        else:
+            loss_aux = self.auxiliary_head.loss(batch_inputs_dict, batch_data_samples, self.train_cfg)
+            losses.update(add_prefix(loss_aux, "aux"))
+
+        return losses
 
     def extract_pts_feat(self, voxel_dict: Dict[str, Tensor], range_dict: Dict[str, Tensor], batch_data_samples) -> Sequence[Tensor]:
         """Extract features of points.
@@ -100,6 +147,9 @@ class SscNet(MVXTwoStageDetector):
         geo_fea, sem_fea, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
         losses = self.ssc_head.loss(geo_fea, sem_fea, sc_query_grid_coor, batch_data_samples, self.train_cfg)
+        if self.with_auxiliary_head:
+            loss_aux = self._auxiliary_head_forward_train(x, batch_data_samples)
+            losses.update(loss_aux)
         return losses
 
     def predict(self, batch_inputs_dict, batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:

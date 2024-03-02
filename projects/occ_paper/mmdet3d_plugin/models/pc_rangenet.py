@@ -9,7 +9,7 @@ from mmengine.model import BaseModule
 from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
 from mmdet3d.utils import ConfigType, OptConfigType
 from mmengine.model import BaseModule
-from .moudle import make_res_layer
+from .utils import make_res_layer
 
 
 @MODELS.register_module()
@@ -19,7 +19,7 @@ class RangeNet(BaseModule):
         in_channels: int = 5,
         stem_channels: int = 128,
         num_stages: int = 4,
-        stage_blocks: Sequence[int] = (2, 2, 2, 2),
+        stage_blocks: Sequence[int] = (3, 4, 6, 3),
         out_channels: Sequence[int] = (128, 128, 128, 128),
         strides: Sequence[int] = (1, 2, 2, 2),
         dilations: Sequence[int] = (1, 1, 1, 1),
