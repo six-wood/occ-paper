@@ -8,7 +8,6 @@ from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
 from mmdet3d.utils import ConfigType, OptConfigType
 from mmcv.cnn import ConvModule
-from .moudle import ASPPBlock
 from .data_preprocessor import SemkittiRangeView
 from .moudle import compute_visibility_mask
 
@@ -24,9 +23,7 @@ class FusionNet(BaseModule):
         range_fov: Sequence[float] = [-25.0, -90.0, 3.0, 90.0],
         fusion_layer: Optional[dict] = None,
         bev_inplanes: int = 1,
-        bev_planes: int = 8,
         bev_outplanes: int = 2,
-        dilations=(1, 2, 3),
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
         act_cfg: ConfigType = dict(type="LeakyReLU"),
@@ -52,16 +49,7 @@ class FusionNet(BaseModule):
         ).get_range_norm_coord
 
         # First convolution
-        self.bev_conv0 = ConvModule(bev_inplanes, bev_planes, 3, padding=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
-        self.aspp3d = ASPPBlock(
-            in_channels=bev_planes,
-            channels=bev_planes,
-            dilations=dilations,
-            conv_cfg=conv_cfg,
-            norm_cfg=norm_cfg,
-            act_cfg=act_cfg,
-        )
-        self.bev_class = ConvModule(bev_planes, bev_outplanes, 1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=None)
+        self.sc_class = ConvModule(bev_inplanes, bev_outplanes, 1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=None)
         # weight conv
         self.weight_conv = ConvModule(bev_inplanes, 1, 1, conv_cfg=dict(type=nn.Conv1d), norm_cfg=norm_cfg, act_cfg=act_cfg)
 
@@ -78,9 +66,7 @@ class FusionNet(BaseModule):
 
         # geometric feature
         x = bev_fea[:, None, :, :, :]
-        x = self.bev_conv0(x)
-        x = self.aspp3d(x)
-        x = self.bev_class(x)
+        x = self.sc_class(x)
         geo_fea = torch.permute(x, (0, 1, 3, 4, 2)).contiguous()  # B, C, Z, H, W -> B, C, H, W, Z
 
         # semantic feature

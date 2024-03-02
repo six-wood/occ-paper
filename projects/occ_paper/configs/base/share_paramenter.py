@@ -6,17 +6,20 @@ fov_vertical = [-25.0, 3.0]
 voxel_size = [0.2, 0.2, 0.2]
 grid_size = [256, 256, 32]
 scale = "1_1"
+
+# model parameters
+k_scatter = 4
+range_encoder_channel = 128
+fuse_channel = 256
+range_out_channel = 128
+head_channel = 32
+
 # loss parameters
 ignore_index = 255
 free_index = 0
 num_classes = 20
 geo_class_weight = [0.446, 0.505]
-# model parameters
-k_scatter = 16
-range_encoder_channel = 128
-fuse_channel = 256
-range_out_channel = 128
-head_channel = 32
+
 
 semantic_kitti_class_frequencies = [
     5.41773033e09,

@@ -3,86 +3,21 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+from typing import Optional
 from mmengine.model import BaseModule
+from spconv.pytorch import SparseConvTensor
 from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
-from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
-from typing import Optional, List
-from mmdet3d.registry import MODELS
-from mmcv.cnn.bricks import DropPath
-from functools import partial
+from mmcv.cnn import build_activation_layer, build_conv_layer, build_norm_layer
 from mmseg.models.decode_heads.aspp_head import ASPPModule
-import torch.utils.checkpoint as cp
 
 
-act_layer = nn.ReLU(inplace=True)
-
-
-def conv3x3(in_planes, out_planes, stride=1, dilation=1, bias=False):
-    """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=dilation, dilation=dilation, bias=bias)
-
-
-class ChannelAtt(nn.Module):
-    def __init__(self, channels, reduction=4):
-        super(ChannelAtt, self).__init__()
-        self.cnet = nn.Sequential(
-            nn.AdaptiveAvgPool2d(output_size=1),
-            nn.Conv2d(channels, channels // reduction, kernel_size=1, padding=0),
-            act_layer,
-            nn.Conv2d(channels // reduction, channels, kernel_size=1, padding=0),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x):
-        # channel wise
-        ca_map = self.cnet(x)
-        x = x * ca_map
-        return x
-
-
-class SpatialAtt(nn.Module):
-    def __init__(self, channels, reduction=4):
-        super(SpatialAtt, self).__init__()
-        self.snet = nn.Sequential(
-            conv3x3(channels, 4, stride=1, dilation=1), nn.BatchNorm2d(4), act_layer, conv3x3(4, 1, stride=1, dilation=1, bias=True), nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        # spatial wise
-        sa_map = self.snet(x)
-        x = x * sa_map
-        return x
-
-
-class CSAtt(nn.Module):
-    def __init__(self, channels, reduction=4):
-        super(CSAtt, self).__init__()
-        self.channel_att = ChannelAtt(channels, reduction)
-        self.spatial_att = SpatialAtt(channels, reduction)
-
-    def forward(self, x):
-        # channel wise
-        x1 = self.channel_att(x)
-        x2 = self.spatial_att(x1)
-        return x2
-
-
-class CrossChannelAttentionModule(BaseModule):
-    def __init__(self, num_channels, reduction_ratio=16):
-        super().__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(num_channels, num_channels // reduction_ratio, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(num_channels // reduction_ratio, num_channels, bias=False),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        b, c, _, _ = x.size()
-        att = self.avg_pool(y).view(b, c).contiguous()
-        att = self.fc(att).view(b, c, 1, 1).contiguous()
-        return x * att.expand_as(x).contiguous()
+def replace_feature(out: SparseConvTensor, new_features: SparseConvTensor) -> SparseConvTensor:
+    if "replace_feature" in out.__dir__():
+        # spconv 2.x behaviour
+        return out.replace_feature(new_features)
+    else:
+        out.features = new_features
+        return out
 
 
 class ResBlock(BaseModule):
@@ -141,59 +76,93 @@ class ResBlock(BaseModule):
         return out
 
 
-class ASPPBlock(BaseModule):
-    """Rethinking Atrous Convolution for Semantic Image Segmentation.
+def make_res_layer(
+    inplanes: int,
+    planes: int,
+    num_blocks: int,
+    stride: int,
+    dilation: int,
+    conv_cfg: OptConfigType = None,
+    norm_cfg: ConfigType = dict(type="BN"),
+    act_cfg: ConfigType = dict(type="LeakyReLU"),
+) -> nn.Sequential:
+    downsample = None
+    if stride != 1 or inplanes != planes:  # downsample to match the dimensions
+        downsample = nn.Sequential(
+            build_conv_layer(conv_cfg, inplanes, planes, kernel_size=1, stride=stride, bias=False), build_norm_layer(norm_cfg, planes)[1]
+        )  # configure the downsample layer
 
-    This head is the implementation of `DeepLabV3
-    <https://arxiv.org/abs/1706.05587>`_.
+    layers = []
+    layers.append(
+        ResBlock(
+            inplanes=inplanes,
+            planes=planes,
+            stride=stride,
+            dilation=dilation,
+            downsample=downsample,
+            conv_cfg=conv_cfg,
+            norm_cfg=norm_cfg,
+            act_cfg=act_cfg,
+        )
+    )  # add the first residual block
+    inplanes = planes
+    for _ in range(1, num_blocks):
+        layers.append(
+            ResBlock(inplanes=inplanes, planes=planes, stride=1, dilation=dilation, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
+        )  # add the residual blocks
+    return nn.Sequential(*layers)
 
-    Args:
-        dilations (tuple[int]): Dilation rates for ASPP module.
-            Default: (1, 6, 12, 18).
-    """
 
-    def __init__(
-        self,
-        dilations=(1, 2, 3),
-        in_channels=1,
-        channels=8,
-        conv_cfg=None,
-        norm_cfg=None,
-        act_cfg=None,
-        **kwargs,
-    ):
+class ASPP3D(BaseModule):
+    def __init__(self, in_channels, mid_channels, out_channels, dilations=(1, 2, 3), conv_cfg=None, norm_cfg=None, act_cfg=None, **kwargs):
         super().__init__()
-        assert isinstance(dilations, (list, tuple))
-        self.dilations = dilations
-        self.in_channels = in_channels
-        self.channels = channels
-        self.conv_cfg = conv_cfg
-        self.norm_cfg = norm_cfg
-        self.act_cfg = act_cfg
+        # First convolution
+        self.conv0 = build_conv_layer(conv_cfg, in_channels, mid_channels, kernel_size=3, stride=1, padding=1)
+        self.bn0 = build_norm_layer(norm_cfg, mid_channels)[1]
 
-        self.aspp_modules = ASPPModule(
-            dilations, self.in_channels, self.channels, conv_cfg=self.conv_cfg, norm_cfg=self.norm_cfg, act_cfg=self.act_cfg
+        # ASPP Block
+        self.conv_list = dilations
+        num = len(dilations)
+        self.conv1 = nn.ModuleList(
+            [build_conv_layer(conv_cfg, mid_channels, mid_channels, kernel_size=3, stride=1, padding=dil, dilation=dil) for dil in dilations]
         )
-        self.bottleneck = ConvModule(
-            (len(dilations) + 1) * self.channels, self.channels, 3, padding=1, conv_cfg=self.conv_cfg, norm_cfg=self.norm_cfg, act_cfg=self.act_cfg
+        self.bn1 = nn.ModuleList([build_norm_layer(norm_cfg, mid_channels)[1] for dil in dilations])
+
+        self.conv2 = nn.ModuleList(
+            [build_conv_layer(conv_cfg, mid_channels, mid_channels, kernel_size=3, stride=1, padding=dil, dilation=dil) for dil in dilations]
         )
+        self.bn2 = nn.ModuleList([build_norm_layer(norm_cfg, out_channels)[1] for dil in dilations])
 
-    def forward(self, x):
-        """Forward function for feature maps before classifying each pixel with
-        ``self.cls_seg`` fc.
+        # Convolution for output
+        self.conv3 = build_conv_layer(conv_cfg, mid_channels * (num + 1), out_channels, kernel_size=3, padding=1, stride=1)
+        self.bn3 = build_norm_layer(norm_cfg, out_channels)[1]
 
-        Args:
-            inputs (list[Tensor]): List of multi-level img features.
+        self.act = build_activation_layer(act_cfg)
 
-        Returns:
-            feats (Tensor): A tensor of shape (batch_size, self.channels,
-                H, W) which is feature map for last layer of decoder head.
-        """
-        aspp_outs = [x]
-        aspp_outs.extend(self.aspp_modules(x))
-        aspp_outs = torch.cat(aspp_outs, dim=1)
-        feats = self.bottleneck(aspp_outs)
-        return feats
+    def forward(self, fea: Tensor, coors: Tensor) -> Tensor:
+        spatial_shape = coors.max(0)[0][1:] + 1
+        batch_size = int(coors[-1, 0]) + 1
+        x = SparseConvTensor(fea, coors, spatial_shape, batch_size)
+
+        # Convolution to go from inplanes to planes features...
+        x = self.conv0(x)
+        x = replace_feature(x, self.bn0(x.features))
+        x = replace_feature(x, self.act(x.features))
+        y = [x.features]
+        for i in range(len(self.conv_list)):
+            x_ = self.conv1[i](x)
+            x_ = replace_feature(x_, self.bn1[i](x_.features))
+            x_ = replace_feature(x_, self.act(x_.features))
+            x_ = self.conv2[i](x_)
+            x_ = replace_feature(x_, self.bn2[i](x_.features))
+            y.append(x_.features)
+
+        x = replace_feature(x, torch.cat(y, dim=1))
+        x = self.conv3(x)
+        x = replace_feature(x, self.bn3(x.features))
+        x = replace_feature(x, self.act(x.features))
+
+        return x.features
 
 
 def compute_visibility_mask(

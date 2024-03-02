@@ -9,7 +9,7 @@ from mmengine.model import BaseModule
 from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
 from mmdet3d.utils import ConfigType, OptConfigType
 from mmengine.model import BaseModule
-from .moudle import ResBlock
+from .moudle import make_res_layer
 
 
 @MODELS.register_module()
@@ -19,7 +19,7 @@ class RangeNet(BaseModule):
         in_channels: int = 5,
         stem_channels: int = 128,
         num_stages: int = 4,
-        stage_blocks: Sequence[int] = (3, 4, 6, 3),
+        stage_blocks: Sequence[int] = (2, 2, 2, 2),
         out_channels: Sequence[int] = (128, 128, 128, 128),
         strides: Sequence[int] = (1, 2, 2, 2),
         dilations: Sequence[int] = (1, 1, 1, 1),
@@ -45,7 +45,7 @@ class RangeNet(BaseModule):
             stride = strides[i]
             dilation = dilations[i]
             planes = out_channels[i]
-            res_layer = self.make_res_layer(
+            res_layer = make_res_layer(
                 inplanes=inplanes,
                 planes=planes,
                 num_blocks=num_blocks,
@@ -73,53 +73,10 @@ class RangeNet(BaseModule):
 
     def _make_stem_layer(self, in_channels: int, out_channels: int) -> None:  # tree conv blocks in beginning
         self.stem = nn.Sequential(
-            build_conv_layer(self.conv_cfg, in_channels, out_channels // 2, kernel_size=3, padding=1, bias=False),
-            build_norm_layer(self.norm_cfg, out_channels // 2)[1],
-            build_activation_layer(self.act_cfg),
-            build_conv_layer(self.conv_cfg, out_channels // 2, out_channels, kernel_size=3, padding=1, bias=False),
-            build_norm_layer(self.norm_cfg, out_channels)[1],
-            build_activation_layer(self.act_cfg),
-            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            build_norm_layer(self.norm_cfg, out_channels)[1],
-            build_activation_layer(self.act_cfg),
+            ConvModule(in_channels, out_channels, kernel_size=3, padding=1, conv_cfg=self.conv_cfg, norm_cfg=self.norm_cfg, act_cfg=self.act_cfg),
+            ConvModule(out_channels, out_channels, kernel_size=3, padding=1, conv_cfg=self.conv_cfg, norm_cfg=self.norm_cfg, act_cfg=self.act_cfg),
+            ConvModule(out_channels, out_channels, kernel_size=3, padding=1, conv_cfg=self.conv_cfg, norm_cfg=self.norm_cfg, act_cfg=self.act_cfg),
         )  # conv block that bundles conv/norm/activation layers.
-
-    def make_res_layer(
-        self,
-        inplanes: int,
-        planes: int,
-        num_blocks: int,
-        stride: int,
-        dilation: int,
-        conv_cfg: OptConfigType = None,
-        norm_cfg: ConfigType = dict(type="BN"),
-        act_cfg: ConfigType = dict(type="LeakyReLU"),
-    ) -> nn.Sequential:
-        downsample = None
-        if stride != 1 or inplanes != planes:  # downsample to match the dimensions
-            downsample = nn.Sequential(
-                build_conv_layer(conv_cfg, inplanes, planes, kernel_size=1, stride=stride, bias=False), build_norm_layer(norm_cfg, planes)[1]
-            )  # configure the downsample layer
-
-        layers = []
-        layers.append(
-            ResBlock(
-                inplanes=inplanes,
-                planes=planes,
-                stride=stride,
-                dilation=dilation,
-                downsample=downsample,
-                conv_cfg=conv_cfg,
-                norm_cfg=norm_cfg,
-                act_cfg=act_cfg,
-            )
-        )  # add the first residual block
-        inplanes = planes
-        for _ in range(1, num_blocks):
-            layers.append(
-                ResBlock(inplanes=inplanes, planes=planes, stride=1, dilation=dilation, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
-            )  # add the residual blocks
-        return nn.Sequential(*layers)
 
     def forward(self, x: Tensor) -> Tuple[Tensor]:
         x = self.stem(x)

@@ -16,8 +16,8 @@ with read_base():
 
 # train settings
 train_dataloader.update(batch_size=2)
-val_dataloader.update(batch_size=4)
-test_dataloader.update(batch_size=4)
+val_dataloader.update(batch_size=2)
+test_dataloader.update(batch_size=2)
 
 # # debug settings
 # train_dataloader.update(dataset=dict(indices=50))
@@ -26,6 +26,6 @@ test_dataloader.update(batch_size=4)
 # visualization settings
 vis_backends = [
     dict(type=LocalVisBackend),
-    dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="baseline-16")),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="big-minkunet(modify)-4")),
 ]
 visualizer = dict(type=OccLocalVisualizer, vis_backends=vis_backends, name="visualizer", ssc_show_dir="outputs/visualizer")
