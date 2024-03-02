@@ -5,7 +5,7 @@ from projects.occ_paper.mmdet3d_plugin.visualization.local_visualizer import Occ
 
 with read_base():
     from mmdet3d.configs._base_.default_runtime import *
-    from .base.cosine import *
+    from .base.lr import *
     from .base.net import *
     from .base.semankitti import *
 
@@ -26,6 +26,8 @@ test_dataloader.update(batch_size=2)
 # visualization settings
 vis_backends = [
     dict(type=LocalVisBackend),
-    dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="minkunet-4")),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="minkunet-4-lr")),
 ]
 visualizer = dict(type=OccLocalVisualizer, vis_backends=vis_backends, name="visualizer", ssc_show_dir="outputs/visualizer")
+
+custom_imports = dict(imports=["projects.occ_paper.mmdet3d_plugin"], allow_failed_imports=False)

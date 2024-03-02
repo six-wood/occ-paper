@@ -148,7 +148,7 @@ class SscNet(MVXTwoStageDetector):
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
         losses = self.ssc_head.loss(geo_fea, sem_fea, sc_query_grid_coor, batch_data_samples, self.train_cfg)
         if self.with_auxiliary_head:
-            loss_aux = self._auxiliary_head_forward_train(x, batch_data_samples)
+            loss_aux = self._auxiliary_head_forward_train(sem_fea, batch_data_samples)
             losses.update(loss_aux)
         return losses
 

@@ -5,7 +5,7 @@ from mmdet3d.visualization.local_visualizer import Det3DLocalVisualizer
 
 with read_base():
     from mmdet3d.configs._base_.default_runtime import *
-    from .base.cosine import *
+    from .base.lr import *
     from .base.net import *
     from .base.semankitti import *
 
