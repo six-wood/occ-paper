@@ -133,10 +133,10 @@ class SscNet(MVXTwoStageDetector):
             device=coors.device,
         )  # channel first(height first)
         bev_map[coors[:, 0], coors[:, 1], coors[:, 3], coors[:, 2]] = 1
-        voxel_features = self.pts_bev_backbone(bev_map)  # channel first
+        bev_feature = self.pts_bev_backbone(bev_map)  # channel first
         range_features = self.pts_range_backbone(range_dict["range_imgs"])
-        geo_fea, sem_fea, sc_query_grid_coor = self.fusion_neck(voxel_features, range_features)  # channel first
-        return geo_fea, sem_fea, sc_query_grid_coor
+        geo_fea, sem_fea, sc_query_grid_coor = self.fusion_neck(bev_feature, range_features[0])  # channel first
+        return geo_fea, sem_fea, range_features, sc_query_grid_coor
 
     def loss(self, batch_inputs_dict: Dict[List, Tensor], batch_data_samples: List[Det3DDataSample], **kwargs) -> List[Det3DDataSample]:
         # imgs = batch_inputs_dict.get("imgs", None)
@@ -144,7 +144,7 @@ class SscNet(MVXTwoStageDetector):
         range_dict = batch_inputs_dict.get("range_imgs", None)
         # batch_input_metas = [item.metainfo for item in batch_data_samples]
 
-        geo_fea, sem_fea, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
+        geo_fea, sem_fea, range_feas, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
         losses = self.ssc_head.loss(geo_fea, sem_fea, sc_query_grid_coor, batch_data_samples, self.train_cfg)
         if self.with_auxiliary_head:
@@ -158,7 +158,7 @@ class SscNet(MVXTwoStageDetector):
         range_dict = batch_inputs_dict.get("range_imgs", None)
         # batch_input_metas = [item.metainfo for item in batch_data_samples]
 
-        geo_fea, sem_fea, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
+        geo_fea, sem_fea, _, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
         geo_logits, sem_logits = self.ssc_head.predict(geo_fea, sem_fea, sc_query_grid_coor, batch_data_samples)
         results = self.postprocess_result(geo_logits, sem_logits, sc_query_grid_coor, batch_data_samples)

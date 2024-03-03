@@ -103,11 +103,15 @@ class SSCMetric(BaseMetric):
         prefix: Optional[str] = None,
         pklfile_prefix: str = None,
         submission_prefix: str = None,
+        free_index: int = 0,
+        ignore_index: int = 255,
         **kwargs,
     ):
         super().__init__(prefix=prefix, collect_device=collect_device)
         self.pklfile_prefix = pklfile_prefix
         self.submission_prefix = submission_prefix
+        self.free_index = free_index
+        self.ignore_index = ignore_index
 
     def get_score_completion(self, predict, target, nonempty=None):
         predict = np.copy(predict)
@@ -226,7 +230,9 @@ class SSCMetric(BaseMetric):
         # if ignore_index is in iou, replace it with nan
         if ignore_index < len(iou):
             iou[ignore_index] = np.nan
-        miou = np.nanmean(iou)
+        iou_no_free = iou.copy()
+        iou_no_free[self.free_index] = np.nan
+        miou = np.nanmean(iou_no_free)
         acc = get_acc(sum(hist_list))
         acc_cls = get_acc_cls(sum(hist_list))
 
@@ -276,7 +282,10 @@ class SSCMetric(BaseMetric):
             return None
 
         label2cat = self.dataset_meta["label2cat"]
-        ignore_index = self.dataset_meta["ignore_index"]
+        if "ignore_index" in self.dataset_meta:
+            ignore_index = self.dataset_meta["ignore_index"]
+        else:
+            ignore_index = self.ignore_index
 
         gt_ssc_masks = []
         pred_ssc_masks = []
