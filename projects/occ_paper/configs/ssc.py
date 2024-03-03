@@ -15,7 +15,7 @@ with read_base():
 # TODO Use the cross attention fuse image and range feature
 
 # train settings
-train_dataloader.update(batch_size=2)
+train_dataloader.update(batch_size=4)
 val_dataloader.update(batch_size=2)
 test_dataloader.update(batch_size=2)
 
