@@ -40,6 +40,6 @@ test_cfg = dict()
 #   - `enable` means enable scaling LR automatically
 #       or not by default.
 #   - `base_batch_size` = (4 GPUs) x (4 samples per GPU).
-auto_scale_lr = dict(enable=False, base_batch_size=4)
+auto_scale_lr = dict(enable=True, base_batch_size=4)
 
 randomness = dict(seed=3407)
