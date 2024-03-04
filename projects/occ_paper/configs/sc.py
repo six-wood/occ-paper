@@ -5,6 +5,7 @@ from mmdet.models.losses import CrossEntropyLoss
 from mmdet3d.visualization.local_visualizer import Det3DLocalVisualizer
 from mmdet3d.models.data_preprocessors import Det3DDataPreprocessor
 from projects.occ_paper.mmdet3d_plugin.models.sc_net import ScNet
+from mmengine.dataset import ConcatDataset
 
 with read_base():
     from mmdet3d.configs._base_.default_runtime import *
@@ -14,6 +15,7 @@ with read_base():
 model = dict(
     type=ScNet,
     use_pred_mask=True,
+    test_save_dir="/data/semanticKitti/dataset/sequences_lmscnet_sweep10",
     data_preprocessor=dict(
         type=Det3DDataPreprocessor,
         voxel=True,
@@ -76,19 +78,26 @@ train_pipeline = [
 ]
 
 val_pipeline = train_pipeline
+test_pipeline = train_pipeline
 
 train_split.update(dict(metainfo=metainfo, pipeline=train_pipeline))
 val_split.update(dict(metainfo=metainfo, pipeline=val_pipeline))
-test_split.update(dict(metainfo=metainfo, pipeline=test_pipeline))
 
 train_dataloader.update(dict(dataset=train_split, batch_size=4))
 val_dataloader.update(dict(dataset=val_split, batch_size=4))
-test_dataloader.update(dict(dataset=test_split, batch_size=4))
+test_dataloader = dict(
+    batch_size=4,
+    num_workers=4,
+    persistent_workers=True,
+    drop_last=False,
+    sampler=dict(type=DefaultSampler, shuffle=False),
+    dataset=dict(type=ConcatDataset, datasets=[train_split, val_split]),
+)
 
 # visualization settings
 vis_backends = [
     dict(type=LocalVisBackend),
-    dict(type=WandbVisBackend, init_kwargs=dict(project="sc+seg", name="baseline")),
+    # dict(type=WandbVisBackend, init_kwargs=dict(project="sc+seg", name="res242+MSB")),
 ]
 visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
 

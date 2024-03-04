@@ -16,6 +16,32 @@ from mmengine.model import BaseModule
 from .utils import make_res_layer
 
 
+class MSBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_sizes=[3, 5, 7], groups=[2, 4, 8], conv_cfg=None, norm_cfg=None, act_cfg=None):
+        super(MSBlock, self).__init__()
+        self.MSC = nn.ModuleList()
+        for i in range(len(kernel_sizes)):
+            self.MSC.append(
+                ConvModule(
+                    in_channels,
+                    out_channels,
+                    kernel_size=kernel_sizes[i],
+                    stride=1,
+                    padding=(kernel_sizes[i] - 1) // 2,
+                    groups=groups[i],
+                    conv_cfg=conv_cfg,
+                    norm_cfg=norm_cfg,
+                    act_cfg=act_cfg,
+                )
+            )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = x
+        for i in range(len(self.MSC)):
+            out = out + self.MSC[i](x)
+        return out
+
+
 class BevNet(BaseModule):
     def __init__(
         self,
@@ -83,17 +109,20 @@ class BevNet(BaseModule):
         # decode block 1
         self.up_sample1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=2, padding=0, stride=2, bias=False)
         self.conv_layer1 = self._make_conv_layer(d_in1 + e_out3, d_out1)
+        self.MSB1 = MSBlock(d_out1, d_out1, kernel_sizes=[1, 3, 5], groups=[4, 8, 16], conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
 
         # decode block 2
         self.up_sample2 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=2, padding=0, stride=2, bias=False)
         self.up_sample2_1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=4, padding=0, stride=4, bias=False)
         self.conv_layer2 = self._make_conv_layer(d_out1 + d_in1 + e_out2, d_out2)
+        self.MSB2 = MSBlock(d_out2, d_out2, kernel_sizes=[3, 5, 7], groups=[3, 6, 12], conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
 
         # decode block 3
         self.up_sample3 = nn.ConvTranspose2d(d_out2, d_out2, kernel_size=2, padding=0, stride=2, bias=False)
         self.up_sample3_1 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=4, padding=0, stride=4, bias=False)
         self.up_sample3_2 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=8, padding=0, stride=8, bias=False)
         self.conv_layer3 = self._make_conv_layer(d_out2 + d_out1 + d_in1 + stem_out, d_out3)
+        self.MSB3 = MSBlock(d_out3, d_out3, kernel_sizes=[5, 7, 9], groups=[2, 4, 8], conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
 
     def _make_conv_layer(self, in_channels: int, out_channels: int) -> None:  # two conv blocks in beginning
         return nn.Sequential(
@@ -114,12 +143,14 @@ class BevNet(BaseModule):
         dec1 = self.up_sample1(outs[-1])  # [bs, 80, 64, 64]
         dec1 = torch.cat([dec1, outs[-2]], dim=1)  # [bs, 80+64, 64, 64]
         dec1 = self.conv_layer1(dec1)  # [bs, 64, 64, 64]
+        dec1 = self.MSB1(dec1)
 
         # Decoder2 out_1/2
         dec2 = self.up_sample2(dec1)  # [bs, 64, 128, 128]
         fuse2_1 = self.up_sample2_1(outs[-1])  # [bs, 80, 128, 128]
         dec2 = torch.cat([dec2, outs[-3], fuse2_1], dim=1)  # [bs, 64+48+80, 128, 128]
         dec2 = self.conv_layer2(dec2)  # [bs, 48, 128, 128]
+        dec2 = self.MSB2(dec2)
 
         # Decoder3 out_1
         dec3 = self.up_sample3(dec2)  # [bs, 48, 256, 256]
@@ -127,6 +158,7 @@ class BevNet(BaseModule):
         fuse3_2 = self.up_sample3_2(outs[-1])  # [bs, 80, 256, 256]
         dec3 = torch.cat([dec3, outs[-4], fuse3_1, fuse3_2], dim=1)  # [bs, 48+32+64+80, 256, 256]
         dec3 = self.conv_layer3(dec3)  # [bs, 32, 256, 256]
+        dec3 = self.MSB3(dec3)
         # dec3 = self.atten_block3(dec3, bev_map)
 
         return dec3
@@ -329,22 +361,37 @@ class ScNet(MVXTwoStageDetector):
             list: The predictions of given data.
         """
         pass
+
+
         data = self.data_preprocessor(data, False)
         batch_inputs_dict = data["inputs"]
         batch_data_samples = data["data_samples"]
         voxel_dict = batch_inputs_dict["voxels"]
 
+        seg_label = self._stack_batch_gt(batch_data_samples).cpu().numpy()
         bev_fea = self.extract_pts_feat(voxel_dict)
         sc_logits = self.sc_head(bev_fea)
         sc_logits = torch.permute(sc_logits, (0, 1, 3, 4, 2)).contiguous()
         seg_pred = sc_logits.argmax(dim=1).cpu().numpy()
-        pred_pc = self.occupied_voxels_to_pc(seg_pred)
-        pred_sem = pred_pc[:, 3].astype(np.int32)
-        pred_geo = pred_pc[:, :3]
 
-        for data_sample in batch_data_samples:
+        for i, data_sample in enumerate(batch_data_samples):
+            metainfo = data_sample.get("metainfo", {})
+            lidar_path = metainfo.get("lidar_path", None)
+            seq = lidar_path.split("/")[-3]
+            name = lidar_path.split("/")[-1]
+            sc_save_path = f"{self.test_save_dir}/{seq}/{'velodyne'}/{name}"
+            label_save_path = f"{self.test_save_dir}/{seq}/{'labels'}/{name}".replace(".bin", ".label")
+            pred_pc = self.occupied_voxels_to_pc(seg_pred[i, :])
+            pred_geo = pred_pc[:, :3].astype(np.float32)
+            pred_sem = pred_pc[:, 3].astype(np.int32)
+
+            pred_geo.tofile(sc_save_path)
+            pred_sem.tofile(label_save_path)
+
             data_sample.set_data(
                 {
+                    "y_true": seg_label[i, :],
+                    "y_pred": seg_pred[i, :],
                     "pred_pts_geo": pred_geo,
                     "pred_pts_seg": PointData(**{"pts_semantic_mask": pred_sem}),
                 }
