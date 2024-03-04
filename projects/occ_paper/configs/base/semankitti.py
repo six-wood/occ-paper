@@ -14,7 +14,7 @@ from projects.occ_paper.mmdet3d_plugin.datasets.transforms.loading import LoadVo
 from projects.occ_paper.mmdet3d_plugin.datasets.transforms.transforms_3d import ApplayVisMask, RandomFlipVoxel
 from projects.occ_paper.mmdet3d_plugin.datasets.semantickitti_dataset import SemanticKittiSC as dataset_type
 from mmdet3d.evaluation.metrics import SegMetric
-from projects.occ_paper.mmdet3d_plugin.evaluation.ssc_metric import SSCMetric
+from projects.occ_paper.mmdet3d_plugin.evaluation.ssc_metric import SscMetric
 from mmengine.config import read_base
 
 with read_base():
@@ -250,5 +250,5 @@ test_dataloader = dict(
     dataset=test_split,
 )
 
-val_evaluator = dict(type=SSCMetric)
+val_evaluator = dict(type=SscMetric)
 test_evaluator = val_evaluator

@@ -78,7 +78,7 @@ def get_acc_cls(hist):
 
 
 @METRICS.register_module()
-class SSCMetric(BaseMetric):
+class SscMetric(BaseMetric):
     """3D semantic segmentation evaluation metric.
 
     Args:
