@@ -107,6 +107,8 @@ class SemanticKittiSC(SemanticKittiDataset):
     def parse_data_info(self, info: dict) -> dict:
         if self.modality["use_lidar"]:
             info["lidar_points"]["lidar_path"] = info["lidar_path"] = osp.join(self.data_root, info["lidar_points"]["lidar_path"])
+            info["sc_points"]["sc_path"] = osp.join(self.data_root, info["sc_points"]["sc_path"])
+            info["sc_points"]["sc_label_path"] = osp.join(self.data_root, info["sc_points"]["sc_label_path"])
             info["voxel_path"] = osp.join(self.data_root, info["lidar_points"]["voxel_path"])
             info["pts_semantic_mask_path"] = osp.join(self.data_root, info["pts_semantic_mask_path"])
 

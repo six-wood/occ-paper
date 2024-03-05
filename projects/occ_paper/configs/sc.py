@@ -101,7 +101,7 @@ vis_backends = [
 ]
 visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
 
-val_evaluator = dict(type=SscMetric)
+val_evaluator = dict(type=SscMetric, num_classes=2)
 test_evaluator = val_evaluator
 # debug settings
 # train_dataloader.update(dataset=dict(indices=100))

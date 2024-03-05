@@ -141,6 +141,20 @@ def get_semantickitti_info(root_path, split, sweep=10):
                         "voxel_size": 0.2,
                         "num_pts_feats": 4,
                     },
+                    "sc_points": {
+                        "sc_path": osp.join(
+                            "sequences_lmscnet_sweep10",
+                            str(i_folder).zfill(2),
+                            "velodyne",
+                            str(j).zfill(6) + ".bin",
+                        ),
+                        "sc_label_path": osp.join(
+                            "sequences_lmscnet_sweep10",
+                            str(i_folder).zfill(2),
+                            "labels",
+                            str(j).zfill(6) + ".label",
+                        ),
+                    },
                     "voxel_label_path": {
                         "1_1": osp.join(
                             "labels",

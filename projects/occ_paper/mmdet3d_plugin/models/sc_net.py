@@ -249,6 +249,8 @@ class ScNet(MVXTwoStageDetector):
         self.sc_head = ScHead(1, 8, 2, [1, 2, 3])
         self.loss_sc = MODELS.build(loss_sc)
 
+        np.set_printoptions(threshold=np.inf, linewidth=np.inf, formatter={"int": "{:7d}".format})
+
     def extract_pts_feat(self, voxel_dict: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Extract features of points.
         All Channel first.
@@ -331,7 +333,7 @@ class ScNet(MVXTwoStageDetector):
         result = list([result])
         return result
 
-    def occupied_voxels_to_pc(self, occupancy_grid):
+    def occupied_voxels_to_pc(self, occupancy_grid, occupancy_label):
         """Saves only occupied voxels to a text file."""
         # Reshape the grid
         grid_shape = self.grid_shape
@@ -339,6 +341,7 @@ class ScNet(MVXTwoStageDetector):
         x_offset, y_offset, z_offset = self.pc_range[:3]
 
         reshaped_grid = occupancy_grid.reshape(grid_shape)
+        reshaped_label = occupancy_label.reshape(grid_shape)
 
         # Generate grid coordinates
         x, y, z = np.meshgrid(np.arange(grid_shape[0]), np.arange(grid_shape[1]), np.arange(grid_shape[2]), indexing="ij")
@@ -347,7 +350,7 @@ class ScNet(MVXTwoStageDetector):
         z = z * z_scale + z_offset
 
         # Flatten and filter out unoccupied voxels
-        coordinates = np.vstack((x.ravel(), y.ravel(), z.ravel(), reshaped_grid.ravel())).T
+        coordinates = np.vstack((x.ravel(), y.ravel(), z.ravel(), reshaped_grid.ravel(), reshaped_label.ravel())).T
         occupied_coordinates = coordinates[coordinates[:, 3] > 0]
         return occupied_coordinates
 
@@ -361,7 +364,6 @@ class ScNet(MVXTwoStageDetector):
             list: The predictions of given data.
         """
         pass
-
 
         data = self.data_preprocessor(data, False)
         batch_inputs_dict = data["inputs"]
@@ -380,10 +382,22 @@ class ScNet(MVXTwoStageDetector):
             seq = lidar_path.split("/")[-3]
             name = lidar_path.split("/")[-1]
             sc_save_path = f"{self.test_save_dir}/{seq}/{'velodyne'}/{name}"
+            txt_save_path = f"{self.test_save_dir}/{seq}/{'txt'}/{name}".replace(".bin", ".txt")
             label_save_path = f"{self.test_save_dir}/{seq}/{'labels'}/{name}".replace(".bin", ".label")
-            pred_pc = self.occupied_voxels_to_pc(seg_pred[i, :])
+            pred_pc = self.occupied_voxels_to_pc(seg_pred[i, :], seg_label[i, :])
             pred_geo = pred_pc[:, :3].astype(np.float32)
-            pred_sem = pred_pc[:, 3].astype(np.int32)
+            pred_sem = pred_pc[:, 4].astype(np.int32)
+
+            pred_txt = np.hstack((pred_geo, pred_sem[:, None]))
+            np.savetxt(txt_save_path, pred_txt, fmt="%f %f %f %f")
+
+            # label frequency counr
+            sample_label_count = np.bincount(pred_sem)
+            all_label_count = np.bincount(seg_label[i, :].ravel())
+            index = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 255]
+            print(f"Sample label count: {sample_label_count[index]}")
+            print(f"All label count   : {all_label_count[index]}")
+            print("====================================")
 
             pred_geo.tofile(sc_save_path)
             pred_sem.tofile(label_save_path)
