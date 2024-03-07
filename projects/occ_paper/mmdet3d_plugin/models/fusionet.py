@@ -51,10 +51,10 @@ class FusionNet(BaseModule):
         # First convolution
         self.sc_class = ConvModule(bev_inplanes, bev_outplanes, 1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=None)
         # weight conv
-        self.weight_conv = ConvModule(bev_inplanes, 1, 1, conv_cfg=dict(type=nn.Conv1d), norm_cfg=norm_cfg, act_cfg=act_cfg)
+        # self.weight_conv = ConvModule(bev_inplanes, 1, 1, conv_cfg=dict(type=nn.Conv1d), norm_cfg=norm_cfg, act_cfg=act_cfg)
 
-        if fusion_layer is not None:
-            self.fusion_layer = MODELS.build(fusion_layer)
+        # if fusion_layer is not None:
+        #     self.fusion_layer = MODELS.build(fusion_layer)
 
     def forward(self, bev_fea: Tensor, range_fea: Tensor):
         # init
@@ -77,20 +77,20 @@ class FusionNet(BaseModule):
         sc_query_grid_coor = torch.stack([sc_query // (W * Z), (sc_query % (W * Z)) // Z, (sc_query % (W * Z)) % Z], dim=2)  # B, N, 3
         sc_query_points = sc_query_grid_coor * self.voxel_size + self.voxel_size / 2 + self.offset
 
-        sc_query_range = self.transform_range_coord(sc_query_points).unsqueeze(1)
+        sc_query_range = 2 * self.transform_range_coord(sc_query_points).unsqueeze(1) - 1  # x y [-1 1]
         sem_fea = F.grid_sample(range_fea, sc_query_range, align_corners=False).squeeze(2)  # B, C, N
 
         # geo weight(for occlusion
         batch_indices = torch.arange(B, device=device).unsqueeze(1).expand(-1, sc_query_grid_coor.shape[1]).unsqueeze(2)
         sc_query_grid_coor = torch.cat([batch_indices, sc_query_grid_coor], dim=2).to(torch.int32)
-        bev_fea = bev_fea.permute(0, 2, 3, 1).contiguous()
-        geo_fea_sample = bev_fea[
-            sc_query_grid_coor[:, :, 0],
-            sc_query_grid_coor[:, :, 1],
-            sc_query_grid_coor[:, :, 2],
-            sc_query_grid_coor[:, :, 3],
-        ].unsqueeze(1)
-        weight = self.weight_conv(geo_fea_sample)
-        sem_fea = weight * sem_fea + geo_fea_sample
+        # bev_fea = bev_fea.permute(0, 2, 3, 1).contiguous()
+        # geo_fea_sample = bev_fea[
+        #     sc_query_grid_coor[:, :, 0],
+        #     sc_query_grid_coor[:, :, 1],
+        #     sc_query_grid_coor[:, :, 2],
+        #     sc_query_grid_coor[:, :, 3],
+        # ].unsqueeze(1)
+        # weight = self.weight_conv(geo_fea_sample)
+        # sem_fea = weight * sem_fea + geo_fea_sample
 
         return geo_fea, sem_fea, sc_query_grid_coor

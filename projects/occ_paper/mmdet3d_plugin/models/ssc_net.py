@@ -23,8 +23,8 @@ class SscNet(MVXTwoStageDetector):
         use_pred_mask: bool = False,
         img_backbone: Optional[dict] = None,
         img_neck: Optional[dict] = None,
-        pts_bev_backbone: Optional[dict] = None,
-        pts_range_backbone: Optional[dict] = None,
+        bev_backbone: Optional[dict] = None,
+        range_backbone: Optional[dict] = None,
         fusion_neck: Optional[dict] = None,
         ssc_head: Optional[dict] = None,
         auxiliary_head: OptMultiConfig = None,
@@ -46,10 +46,10 @@ class SscNet(MVXTwoStageDetector):
         SSCNet architecture
         :param N: number of classes to be predicted (i.e. 12 for NYUv2)
         """
-        if pts_bev_backbone is not None:
-            self.pts_bev_backbone = MODELS.build(pts_bev_backbone)
-        if pts_range_backbone is not None:
-            self.pts_range_backbone = MODELS.build(pts_range_backbone)
+        if bev_backbone is not None:
+            self.bev_backbone = MODELS.build(bev_backbone)
+        if range_backbone is not None:
+            self.range_backbone = MODELS.build(range_backbone)
         if fusion_neck is not None:
             self.fusion_neck = MODELS.build(fusion_neck)
         if ssc_head is not None:
@@ -133,8 +133,8 @@ class SscNet(MVXTwoStageDetector):
             device=coors.device,
         )  # channel first(height first)
         bev_map[coors[:, 0], coors[:, 1], coors[:, 3], coors[:, 2]] = 1
-        bev_feature = self.pts_bev_backbone(bev_map)  # channel first
-        range_features = self.pts_range_backbone(range_dict["range_imgs"])
+        bev_feature = self.bev_backbone(bev_map)  # channel first
+        range_features = self.range_backbone(range_dict["range_imgs"])
         geo_fea, sem_fea, sc_query_grid_coor = self.fusion_neck(bev_feature, range_features[0])  # channel first
         return geo_fea, sem_fea, range_features, sc_query_grid_coor
 
@@ -148,7 +148,7 @@ class SscNet(MVXTwoStageDetector):
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
         losses = self.ssc_head.loss(geo_fea, sem_fea, sc_query_grid_coor, batch_data_samples, self.train_cfg)
         if self.with_auxiliary_head:
-            loss_aux = self._auxiliary_head_forward_train(sem_fea, batch_data_samples)
+            loss_aux = self._auxiliary_head_forward_train(range_feas, batch_data_samples)
             losses.update(loss_aux)
         return losses
 
@@ -156,15 +156,31 @@ class SscNet(MVXTwoStageDetector):
         # imgs = batch_inputs_dict.get("imgs", None)
         voxel_dict = batch_inputs_dict.get("voxels", None)
         range_dict = batch_inputs_dict.get("range_imgs", None)
+        proj_xs = batch_inputs_dict.get("proj_x", None)
+        proj_ys = batch_inputs_dict.get("proj_y", None)
         # batch_input_metas = [item.metainfo for item in batch_data_samples]
 
-        geo_fea, sem_fea, _, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
+        # range_imgs = range_dict["range_imgs"]
+        # B, _, H, W = range_imgs.shape
+        # for b in range(B):
+        #     depth = range_imgs[b, 0, :].cpu().numpy()
+        #     sem_label = batch_data_samples[b].gt_pts_seg.semantic_seg.cpu().numpy()
+        #     label_show = np.full((H, W, 3), 0, dtype=np.uint8)
+        #     import cv2
+
+        #     cv2.normalize(depth, depth, 0, 1, cv2.NORM_MINMAX)
+        #     for i in range(20):
+        #         label_show[sem_label == i] = palette[i]
+        #     aaa = 0
+
+        geo_fea, sem_fea, range_feas, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
         geo_logits, sem_logits = self.ssc_head.predict(geo_fea, sem_fea, sc_query_grid_coor, batch_data_samples)
-        results = self.postprocess_result(geo_logits, sem_logits, sc_query_grid_coor, batch_data_samples)
+        range_logits = self.auxiliary_head[0].predict(range_feas, proj_xs, proj_ys)
+        results = self.postprocess_result(geo_logits, sem_logits, range_logits, sc_query_grid_coor, batch_data_samples)
         return results
 
-    def postprocess_result(self, geo_logits: Tensor, sem_logits: Tensor, sc_query_grid_coor: Tensor, batch_data_samples):
+    def postprocess_result(self, geo_logits: Tensor, sem_logits: Tensor, range_logits: Tensor, sc_query_grid_coor: Tensor, batch_data_samples):
         """Convert results list to `Det3DDataSample`.
 
         Args:
@@ -183,6 +199,17 @@ class SscNet(MVXTwoStageDetector):
             - ``pts_seg_logits`` (PointData): Predicted logits of 3D semantic
               segmentation before normalization.
         """
+
+        # range_seg_pred = range_logits.argmax(dim=1).cpu().numpy()
+        # B, H, W = range_seg_pred.shape
+        # pred_show = np.full((H, W, 3), 0, dtype=np.uint8)
+        # label_show = np.full((H, W, 3), 0, dtype=np.uint8)
+        # for b in range(B):
+        #     sem_label = batch_data_samples[b].gt_pts_seg.semantic_seg.cpu().numpy()
+        #     for i in range(20):
+        #         pred_show[range_seg_pred[b] == i] = palette[i]
+        #         label_show[sem_label == i] = palette[i]
+        #     aaa = 0
 
         gt_semantic_segs = [data_sample.gt_pts_seg.voxel_label.long() for data_sample in batch_data_samples]
         seg_true = torch.stack(gt_semantic_segs, dim=0).cpu().numpy()
@@ -255,3 +282,29 @@ class SscNet(MVXTwoStageDetector):
         #         }
         #     )
         # return batch_data_samples
+
+
+# palette = list(
+#     [
+#         [0, 0, 0],
+#         [100, 150, 245],
+#         [100, 230, 245],
+#         [30, 60, 150],
+#         [80, 30, 180],
+#         [100, 80, 250],
+#         [155, 30, 30],
+#         [255, 40, 200],
+#         [150, 30, 90],
+#         [255, 0, 255],
+#         [255, 150, 255],
+#         [75, 0, 75],
+#         [175, 0, 75],
+#         [255, 200, 0],
+#         [255, 120, 50],
+#         [0, 175, 0],
+#         [135, 60, 0],
+#         [150, 240, 80],
+#         [255, 240, 150],
+#         [255, 0, 0],
+#     ]
+# )

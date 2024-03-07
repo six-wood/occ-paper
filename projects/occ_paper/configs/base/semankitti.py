@@ -3,11 +3,7 @@ import numpy as np
 from mmcv.transforms.processing import TestTimeAug
 from mmengine.dataset.sampler import DefaultSampler
 
-from mmdet3d.datasets.transforms.loading import (
-    LoadImageFromFile,
-    LoadPointsFromFile,
-    LoadAnnotations3D,
-)
+from mmdet3d.datasets.transforms.loading import LoadImageFromFile, LoadPointsFromFile, LoadAnnotations3D, PointSegClassMapping
 from mmdet3d.models.segmentors.seg3d_tta import Seg3DTTAModel
 from projects.occ_paper.mmdet3d_plugin.datasets.transforms.formating import PackSscInputs
 from projects.occ_paper.mmdet3d_plugin.datasets.transforms.loading import LoadVoxelLabelFromFile
@@ -84,26 +80,40 @@ palette = list(
 )
 
 labels_map = {
-    0: 0,
-    1: 1,
-    2: 2,
-    3: 3,
-    4: 4,
-    5: 5,
-    6: 6,
-    7: 7,
-    8: 8,
-    9: 9,
-    10: 10,
-    11: 11,
-    12: 12,
-    13: 13,
-    14: 14,
-    15: 15,
-    16: 16,
-    17: 17,
-    18: 18,
-    19: 19,
+    0: 0,  # "unlabeled"
+    1: 0,  # "outlier" mapped to "unlabeled" --------------------------mapped
+    10: 1,  # "car"
+    11: 2,  # "bicycle"
+    13: 5,  # "bus" mapped to "other-vehicle" --------------------------mapped
+    15: 3,  # "motorcycle"
+    16: 5,  # "on-rails" mapped to "other-vehicle" ---------------------mapped
+    18: 4,  # "truck"
+    20: 5,  # "other-vehicle"
+    30: 6,  # "person"
+    31: 7,  # "bicyclist"
+    32: 8,  # "motorcyclist"
+    40: 9,  # "road"
+    44: 10,  # "parking"
+    48: 11,  # "sidewalk"
+    49: 12,  # "other-ground"
+    50: 13,  # "building"
+    51: 14,  # "fence"
+    52: 0,  # "other-structure" mapped to "unlabeled" ------------------mapped
+    60: 9,  # "lane-marking" to "road" ---------------------------------mapped
+    70: 15,  # "vegetation"
+    71: 16,  # "trunk"
+    72: 17,  # "terrain"
+    80: 18,  # "pole"
+    81: 19,  # "traffic-sign"
+    99: 0,  # "other-object" to "unlabeled" ----------------------------mapped
+    252: 1,  # "moving-car" to "car" ------------------------------------mapped
+    253: 7,  # "moving-bicyclist" to "bicyclist" ------------------------mapped
+    254: 6,  # "moving-person" to "person" ------------------------------mapped
+    255: 8,  # "moving-motorcyclist" to "motorcyclist" ------------------mapped
+    256: 5,  # "moving-on-rails" mapped to "other-vehicle" --------------mapped
+    257: 5,  # "moving-bus" mapped to "other-vehicle" -------------------mapped
+    258: 4,  # "moving-truck" to "truck" --------------------------------mapped
+    259: 5,  # "moving-other"-vehicle to "other-vehicle" ----------------mapped
 }
 
 metainfo = dict(classes=class_names, seg_label_mapping=labels_map, max_label=259)
@@ -120,9 +130,16 @@ train_pipeline = [
         backend_args=backend_args,
     ),
     dict(
-        type=LoadImageFromFile,
+        type=LoadAnnotations3D,
+        with_bbox_3d=False,
+        with_label_3d=False,
+        with_seg_3d=True,
+        seg_3d_dtype="np.int32",
+        seg_offset=2**16,
+        dataset_type="semantickitti",
         backend_args=backend_args,
     ),
+    dict(type=PointSegClassMapping),
     dict(
         type=LoadVoxelLabelFromFile,
         scale=scale,
@@ -136,13 +153,9 @@ train_pipeline = [
         voxel_size=voxel_size,
         fov=fov_vertical,
     ),
-    # dict(
-    #     type=RandomFlipVoxel,
-    #     flip_ratio_bev_horizontal=0.5,
-    # ),
     dict(
         type=PackSscInputs,
-        keys=["points", "voxel_label"],
+        keys=["points", "voxel_label", "pts_semantic_mask"],
     ),
 ]
 
@@ -155,9 +168,16 @@ val_pipeline = [
         backend_args=backend_args,
     ),
     dict(
-        type=LoadImageFromFile,
+        type=LoadAnnotations3D,
+        with_bbox_3d=False,
+        with_label_3d=False,
+        with_seg_3d=True,
+        seg_3d_dtype="np.int32",
+        seg_offset=2**16,
+        dataset_type="semantickitti",
         backend_args=backend_args,
     ),
+    dict(type=PointSegClassMapping),
     dict(
         type=LoadVoxelLabelFromFile,
         scale=scale,
@@ -166,7 +186,7 @@ val_pipeline = [
     ),
     dict(
         type=PackSscInputs,
-        keys=["points", "voxel_label"],
+        keys=["points", "voxel_label", "pts_semantic_mask"],
     ),
 ]
 

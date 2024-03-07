@@ -97,4 +97,4 @@ class RangeNet(BaseModule):
         for layer_name in self.fuse_layers:
             fuse_layer = getattr(self, layer_name)
             outs[0] = fuse_layer(outs[0])
-        return outs
+        return tuple(outs)

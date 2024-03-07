@@ -26,8 +26,14 @@ test_dataloader.update(batch_size=2)
 # visualization settings
 vis_backends = [
     dict(type=LocalVisBackend),
-    dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="minkunet-4-lr-nofree")),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="ssc-topk-fuse", name="minkunet-aux-all")),
 ]
 visualizer = dict(type=OccLocalVisualizer, vis_backends=vis_backends, name="visualizer", ssc_show_dir="outputs/visualizer")
 
 custom_imports = dict(imports=["projects.occ_paper.mmdet3d_plugin"], allow_failed_imports=False)
+
+# train_dataloader.update(dataset=dict(indices=5))
+# val_dataloader.update(dataset=dict(indices=5))
+# train_dataloader.update(batch_size=2)
+# val_dataloader.update(batch_size=2)
+# test_dataloader.update(batch_size=2)

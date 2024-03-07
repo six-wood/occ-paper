@@ -1,15 +1,17 @@
 import torch.nn as nn
-from projects.occ_paper.mmdet3d_plugin.models.pc_bevnet import BevNet
-from projects.occ_paper.mmdet3d_plugin.models.pc_rangenet import RangeNet
-from projects.occ_paper.mmdet3d_plugin.models.pc_fusionnet import FusionNet
+from projects.occ_paper.mmdet3d_plugin.models.bevnet import BevNet
+from projects.occ_paper.mmdet3d_plugin.models.rangenet import RangeNet
+from projects.occ_paper.mmdet3d_plugin.models.fusionet import FusionNet
 from projects.occ_paper.mmdet3d_plugin.models.ssc_net import SscNet
 from projects.occ_paper.mmdet3d_plugin.models.head import DenseSscHead
 from projects.occ_paper.mmdet3d_plugin.models.data_preprocessor import SccDataPreprocessor
-from projects.occ_paper.mmdet3d_plugin.models.losses import OccLovaszLoss
+from projects.occ_paper.mmdet3d_plugin.models.losses import OccLovaszLoss, BoundLoss
+from projects.occ_paper.mmdet3d_plugin.models.rangehead import RangeHead
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
 from mmdet.models.backbones.resnet import ResNet
 from mmdet3d.models.layers.fusion_layers import PointFusion
 from mmdet3d.models.backbones import MinkUNetBackbone
+from mmdet3d.models.losses import LovaszLoss
 from mmengine.config import read_base
 
 with read_base():
@@ -62,13 +64,13 @@ model = dict(
     #     style="pytorch",
     #     init_cfg=dict(type="Pretrained", checkpoint="torchvision://resnet50"),
     # ),
-    pts_bev_backbone=dict(
+    bev_backbone=dict(
         type=BevNet,
         conv_cfg=conv2d,
         act_cfg=HSwin,
         norm_cfg=syncNorm,
     ),
-    pts_range_backbone=dict(
+    range_backbone=dict(
         type=RangeNet,
         conv_cfg=conv2d,
         act_cfg=HSwin,
@@ -97,6 +99,7 @@ model = dict(
             block_type="basic",
             sparseconv_backend="spconv",
         ),
+        # check the class weight
         loss_geo=dict(
             type=CrossEntropyLoss,
             class_weight=geo_class_weight,
@@ -109,10 +112,10 @@ model = dict(
         ),
         loss_lovasz=dict(
             type=OccLovaszLoss,
-            classes=class_index,  # ignore the free class
+            classes=class_index,
             class_weight=semantickitti_class_weight,
             reduction="none",
-            loss_weight=1.0,
+            loss_weight=1.5,
         ),
         ignore_index=ignore_index,
         free_index=free_index,
@@ -120,4 +123,66 @@ model = dict(
         norm_cfg=syncNorm,
         act_cfg=HSwin,
     ),
+    auxiliary_head=[
+        dict(
+            type=RangeHead,
+            channels=128,
+            num_classes=num_classes,
+            dropout_ratio=0,
+            loss_ce=dict(type=CrossEntropyLoss, use_sigmoid=False, class_weight=None, loss_weight=1.0),
+            loss_lovasz=dict(type=LovaszLoss, loss_weight=1.5, reduction="none"),
+            loss_boundary=dict(type=BoundLoss, loss_weight=1.0),
+            conv_seg_kernel_size=1,
+            ignore_index=0,
+            indices=0,
+        ),
+        # dict(
+        #     type=RangeHead,
+        #     channels=128,
+        #     num_classes=num_classes,
+        #     dropout_ratio=0,
+        #     loss_ce=dict(type=CrossEntropyLoss, use_sigmoid=False, class_weight=None, loss_weight=1.0),
+        #     loss_lovasz=dict(type=LovaszLoss, loss_weight=1.5, reduction="none"),
+        #     loss_boundary=dict(type=BoundLoss, loss_weight=1.0),
+        #     conv_seg_kernel_size=1,
+        #     ignore_index=0,
+        #     indices=1,
+        # ),
+        # dict(
+        #     type=RangeHead,
+        #     channels=128,
+        #     num_classes=num_classes,
+        #     dropout_ratio=0,
+        #     loss_ce=dict(type=CrossEntropyLoss, use_sigmoid=False, class_weight=None, loss_weight=1.0),
+        #     loss_lovasz=dict(type=LovaszLoss, loss_weight=1.5, reduction="none"),
+        #     loss_boundary=dict(type=BoundLoss, loss_weight=1.0),
+        #     conv_seg_kernel_size=1,
+        #     ignore_index=0,
+        #     indices=2,
+        # ),
+        # dict(
+        #     type=RangeHead,
+        #     channels=128,
+        #     num_classes=num_classes,
+        #     dropout_ratio=0,
+        #     loss_ce=dict(type=CrossEntropyLoss, use_sigmoid=False, class_weight=None, loss_weight=1.0),
+        #     loss_lovasz=dict(type=LovaszLoss, loss_weight=1.5, reduction="none"),
+        #     loss_boundary=dict(type=BoundLoss, loss_weight=1.0),
+        #     conv_seg_kernel_size=1,
+        #     ignore_index=0,
+        #     indices=3,
+        # ),
+        # dict(
+        #     type=RangeHead,
+        #     channels=128,
+        #     num_classes=num_classes,
+        #     dropout_ratio=0,
+        #     loss_ce=dict(type=CrossEntropyLoss, use_sigmoid=False, class_weight=None, loss_weight=1.0),
+        #     loss_lovasz=dict(type=LovaszLoss, loss_weight=1.5, reduction="none"),
+        #     loss_boundary=dict(type=BoundLoss, loss_weight=1.0),
+        #     conv_seg_kernel_size=1,
+        #     ignore_index=0,
+        #     indices=4,
+        # ),
+    ],
 )

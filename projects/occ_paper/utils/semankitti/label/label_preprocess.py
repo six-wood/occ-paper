@@ -111,7 +111,7 @@ def label_rectification(grid_ind, voxel_label, instance_label, dynamic_classes=[
     return voxel_label
 
 
-sweep = 10
+sweep = 1
 
 
 def main(config):

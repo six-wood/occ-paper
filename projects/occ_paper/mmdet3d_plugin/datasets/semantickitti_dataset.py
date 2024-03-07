@@ -121,6 +121,7 @@ class SemanticKittiSC(SemanticKittiDataset):
         if self.modality["use_camera"]:
             info["img_path"] = osp.join(self.data_root, info["img_path"])
 
+        info['seg_label_mapping'] = self.seg_label_mapping
         # 'eval_ann_info' will be updated in loading transforms
         if self.test_mode and self.load_eval_anns:
             info["eval_ann_info"] = dict()

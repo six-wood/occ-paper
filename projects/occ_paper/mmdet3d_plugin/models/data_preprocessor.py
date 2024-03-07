@@ -26,6 +26,7 @@ class SemkittiRangeView:
         means: Sequence[float] = (11.71279, -0.1023471, 0.4952, -1.0545, 0.2877),
         stds: Sequence[float] = (10.24, 12.295865, 9.4287, 0.8643, 0.1450),
         ignore_index: int = 255,
+        free_index: int = 0,
     ) -> None:
         self.H = H
         self.W = W
@@ -38,18 +39,34 @@ class SemkittiRangeView:
         self.means = torch.Tensor(means)
         self.stds = torch.Tensor(stds)
         self.ignore_index = ignore_index
+        self.free_index = free_index
 
-    def ranglize(self, input: list) -> dict:
-        range_dict = {}
-        range_dict["range_imgs"] = torch.cat([self.transform(res).unsqueeze(0).permute(0, 3, 1, 2) for res in input], dim=0)
-        return range_dict
+    def ranglize(self, inputs: list, data_samples) -> tuple:
+        range_dict, x_dict, y_dict, depth_dict = {}, {}, {}, {}
+        range_imgs, proj_xs, proj_ys, depths = [], [], [], []
 
-    def transform(self, points: torch.Tensor) -> torch.Tensor:
+        for res, data_sample in zip(inputs, data_samples):
+            range_img, proj_x, proj_y, depth, label = self.transform(res, data_sample)
+            range_imgs.append(range_img.unsqueeze(0).permute(0, 3, 1, 2))
+            proj_xs.append(proj_x)
+            proj_ys.append(proj_y)
+            depths.append(depth)
+            if label is not None:
+                data_sample.gt_pts_seg.semantic_seg = label
+
+        range_dict["range_imgs"] = torch.cat(range_imgs, dim=0)
+        x_dict["proj_x"] = proj_xs
+        y_dict["proj_y"] = proj_ys
+        depth_dict["unproj_range"] = depths
+
+        return range_dict, x_dict, y_dict, depth_dict
+
+    def transform(self, points: torch.Tensor, data_sample) -> torch.Tensor:
         device = points.device
         self.means = self.means.to(device)
         self.stds = self.stds.to(device)
         proj_image = torch.full((self.H, self.W, 5), -1, dtype=torch.float32, device=device)
-        proj_idx = torch.full((self.H, self.W), -1, dtype=torch.int32, device=device)
+        proj_idx = torch.full((self.H, self.W), -1, dtype=torch.int64, device=device)
 
         # get depth of all points
         depth = torch.norm(points[:, :3], p=2, dim=1)
@@ -78,20 +95,16 @@ class SemkittiRangeView:
 
         # round and clamp for use as index
         proj_x = torch.floor(proj_x)
-        proj_x = torch.clamp(proj_x, 0, self.W - 1).to(torch.int32)
+        proj_x = torch.clamp(proj_x, 0, self.W - 1).to(torch.int64)
 
         proj_y = torch.floor(proj_y)
-        proj_y = torch.clamp(proj_y, 0, self.H - 1).to(torch.int32)
+        proj_y = torch.clamp(proj_y, 0, self.H - 1).to(torch.int64)
 
         # order in decreasing depth
-        indices = torch.arange(depth.shape[0], device=device).to(torch.int32)
-        order = torch.argsort(depth, descending=True).to(torch.int32)
+        indices = torch.arange(depth.shape[0], device=device, dtype=torch.int64)
+        order = torch.argsort(depth, descending=True)
         proj_idx[proj_y[order], proj_x[order]] = indices[order]
         proj_image[proj_y[order], proj_x[order], 0] = depth[order]
-
-        # depth_img = proj_image[:, :, 0].detach().cpu().numpy()
-        # cv2.normalize(depth_img, depth_img, 0, 255, cv2.NORM_MINMAX)
-        # cv2.imwrite("proj_image.bmp", depth_img)
 
         proj_image[proj_y[order], proj_x[order], 1:] = points[order]
         proj_mask = (proj_idx > 0).to(torch.int32)
@@ -99,7 +112,13 @@ class SemkittiRangeView:
         proj_image = (proj_image - self.means[None, None, :]) / self.stds[None, None, :]
         proj_image = proj_image * proj_mask[..., None].to(torch.float32)
 
-        return proj_image
+        if hasattr(data_sample.gt_pts_seg, "pts_semantic_mask"):
+            proj_sem_label = torch.full((self.H, self.W), self.free_index, dtype=torch.int64, device=device)
+            proj_sem_label[proj_y[order], proj_x[order]] = data_sample.gt_pts_seg.pts_semantic_mask[fov_in][order]
+
+            return proj_image, proj_x, proj_y, depth, proj_sem_label
+
+        return proj_image, proj_x, proj_y, depth, None
 
     def get_range_norm_coord(self, points: torch.Tensor) -> torch.Tensor:
         # get depth of all points
@@ -113,7 +132,7 @@ class SemkittiRangeView:
         proj_x = (yaw + abs(self.fov_left)) / self.fov_x
         proj_y = 1.0 - (pitch + abs(self.fov_down)) / self.fov_y
 
-        return torch.stack([proj_y, proj_x], dim=-1)
+        return torch.stack([proj_x, proj_y], dim=-1)  # x y
 
 
 @MODELS.register_module()
@@ -256,8 +275,11 @@ class SccDataPreprocessor(Det3DDataPreprocessor):
                 batch_inputs["voxels"] = voxel_dict
 
             if self.range_img:
-                range_dict = self.ranglize.ranglize(inputs["points"])
+                range_dict, x_dict, y_dict, depth_dict = self.ranglize.ranglize(inputs["points"], data_samples)
                 batch_inputs["range_imgs"] = range_dict
+                batch_inputs["proj_x"] = x_dict
+                batch_inputs["proj_y"] = y_dict
+                batch_inputs["unproj_range"] = depth_dict
 
         if "imgs" in inputs:
             imgs = inputs["imgs"]
