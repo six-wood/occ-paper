@@ -176,11 +176,11 @@ class SscNet(MVXTwoStageDetector):
         geo_fea, sem_fea, range_feas, sc_query_grid_coor = self.extract_pts_feat(voxel_dict, range_dict, batch_data_samples)
         # img_fea = self.extract_img_feat(imgs, batch_input_metas)
         geo_logits, sem_logits = self.ssc_head.predict(geo_fea, sem_fea, sc_query_grid_coor, batch_data_samples)
-        range_logits = self.auxiliary_head[0].predict(range_feas, proj_xs, proj_ys)
-        results = self.postprocess_result(geo_logits, sem_logits, range_logits, sc_query_grid_coor, batch_data_samples)
+        # range_logits = self.auxiliary_head[0].predict(range_feas, proj_xs, proj_ys)
+        results = self.postprocess_result(geo_logits, sem_logits, sc_query_grid_coor, batch_data_samples)
         return results
 
-    def postprocess_result(self, geo_logits: Tensor, sem_logits: Tensor, range_logits: Tensor, sc_query_grid_coor: Tensor, batch_data_samples):
+    def postprocess_result(self, geo_logits: Tensor, sem_logits: Tensor, sc_query_grid_coor: Tensor, batch_data_samples):
         """Convert results list to `Det3DDataSample`.
 
         Args:

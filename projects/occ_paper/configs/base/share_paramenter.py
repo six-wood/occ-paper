@@ -45,7 +45,7 @@ semantic_kitti_class_frequencies = [
 ]
 
 semantickitti_class_weight = [
-    0.446,
+    0.0,
     0.603,
     0.852,
     0.856,

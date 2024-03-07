@@ -132,7 +132,18 @@ class SemkittiRangeView:
         proj_x = (yaw + abs(self.fov_left)) / self.fov_x
         proj_y = 1.0 - (pitch + abs(self.fov_down)) / self.fov_y
 
-        return torch.stack([proj_x, proj_y], dim=-1)  # x y
+        # scale to image size using angular resolution
+        proj_x *= self.W
+        proj_y *= self.H
+
+        # round and clamp for use as index
+        proj_x = torch.floor(proj_x)
+        proj_x = torch.clamp(proj_x, 0, self.W - 1).to(torch.int64)
+
+        proj_y = torch.floor(proj_y)
+        proj_y = torch.clamp(proj_y, 0, self.H - 1).to(torch.int64)
+
+        return torch.stack([proj_y, proj_x], dim=-1)  # x y
 
 
 @MODELS.register_module()

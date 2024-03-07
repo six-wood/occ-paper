@@ -77,12 +77,14 @@ class FusionNet(BaseModule):
         sc_query_grid_coor = torch.stack([sc_query // (W * Z), (sc_query % (W * Z)) // Z, (sc_query % (W * Z)) % Z], dim=2)  # B, N, 3
         sc_query_points = sc_query_grid_coor * self.voxel_size + self.voxel_size / 2 + self.offset
 
-        sc_query_range = 2 * self.transform_range_coord(sc_query_points).unsqueeze(1) - 1  # x y [-1 1]
-        sem_fea = F.grid_sample(range_fea, sc_query_range, align_corners=False).squeeze(2)  # B, C, N
-
-        # geo weight(for occlusion
         batch_indices = torch.arange(B, device=device).unsqueeze(1).expand(-1, sc_query_grid_coor.shape[1]).unsqueeze(2)
         sc_query_grid_coor = torch.cat([batch_indices, sc_query_grid_coor], dim=2).to(torch.int32)
+
+        sc_query_range = self.transform_range_coord(sc_query_points)
+        sem_fea = range_fea[batch_indices[:, :, 0], :, sc_query_range[:, :, 0], sc_query_range[:, :, 1]].permute(0, 2, 1).contiguous()
+        # sem_fea = F.grid_sample(range_fea, sc_query_range, align_corners=False).squeeze(2)  # B, C, N
+
+        # geo weight(for occlusion
         # bev_fea = bev_fea.permute(0, 2, 3, 1).contiguous()
         # geo_fea_sample = bev_fea[
         #     sc_query_grid_coor[:, :, 0],
