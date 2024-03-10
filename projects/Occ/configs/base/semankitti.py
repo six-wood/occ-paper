@@ -1,16 +1,20 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import numpy as np
-from mmcv.transforms.processing import TestTimeAug
 from mmengine.dataset.sampler import DefaultSampler
-
-from mmdet3d.datasets.transforms.loading import LoadImageFromFile, LoadPointsFromFile, LoadAnnotations3D, PointSegClassMapping
-from mmdet3d.models.segmentors.seg3d_tta import Seg3DTTAModel
-from projects.occ_paper.mmdet3d_plugin.datasets.transforms.formating import PackSscInputs
-from projects.occ_paper.mmdet3d_plugin.datasets.transforms.loading import LoadVoxelLabelFromFile
-from projects.occ_paper.mmdet3d_plugin.datasets.transforms.transforms_3d import ApplayVisMask, RandomFlipVoxel
-from projects.occ_paper.mmdet3d_plugin.datasets.semantickitti_dataset import SemanticKittiSC as dataset_type
+from mmdet3d.datasets.transforms import (
+    LoadPointsFromFile,
+    LoadAnnotations3D,
+    PointSegClassMapping,
+    PointSample,
+    RandomFlip3D,
+    GlobalRotScaleTrans,
+)
+from mmdet3d.datasets.utils import Pack3DDetInputs
 from mmdet3d.evaluation.metrics import SegMetric
-from projects.occ_paper.mmdet3d_plugin.evaluation.ssc_metric import SscMetric
+from projects.Occ.plugin.datasets.semantickitti_dataset import SemanticKittiSC as dataset_type
+from projects.Occ.plugin.datasets.transforms_3d import SemkittiRangeView
+
+# from projects.Occ.plugin.evaluation.ssc_metric import SscMetric
+
 from mmengine.config import read_base
 
 with read_base():
@@ -122,13 +126,7 @@ input_modality = dict(use_lidar=True, use_camera=True)
 backend_args = None
 
 train_pipeline = [
-    dict(
-        type=LoadPointsFromFile,
-        coord_type="LIDAR",
-        load_dim=4,
-        use_dim=4,
-        backend_args=backend_args,
-    ),
+    dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
     dict(
         type=LoadAnnotations3D,
         with_bbox_3d=False,
@@ -140,72 +138,50 @@ train_pipeline = [
         backend_args=backend_args,
     ),
     dict(type=PointSegClassMapping),
+    dict(type=PointSample, num_points=0.9),
+    dict(type=RandomFlip3D, sync_2d=False, flip_ratio_bev_horizontal=0.5, flip_ratio_bev_vertical=0.5),
     dict(
-        type=LoadVoxelLabelFromFile,
-        scale=scale,
-        ignore_index=ignore_index,
-        grid_size=grid_size,
+        type=GlobalRotScaleTrans,
+        rot_range=[-3.1415929, 3.1415929],
+        scale_ratio_range=[0.95, 1.05],
+        translation_std=[0.1, 0.1, 0.1],
     ),
     dict(
-        type=ApplayVisMask,
-        center=[0, 0, 0],
-        pc_range=point_cloud_range,
-        voxel_size=voxel_size,
-        fov=fov_vertical,
+        type=SemkittiRangeView,
+        H=64,
+        W=512,
+        fov_up=3.0,
+        fov_down=-25.0,
+        means=(11.71279, -0.1023471, 0.4952, -1.0545, 0.2877),
+        stds=(10.24, 12.295865, 9.4287, 0.8643, 0.1450),
+        ignore_index=19,
     ),
-    dict(
-        type=PackSscInputs,
-        keys=["points", "voxel_label", "pts_semantic_mask"],
-    ),
+    dict(type=Pack3DDetInputs, keys=["img", "gt_semantic_seg"]),
 ]
-
-val_pipeline = [
-    dict(
-        type=LoadPointsFromFile,
-        coord_type="LIDAR",
-        load_dim=4,
-        use_dim=4,
-        backend_args=backend_args,
-    ),
-    dict(
-        type=LoadAnnotations3D,
-        with_bbox_3d=False,
-        with_label_3d=False,
-        with_seg_3d=True,
-        seg_3d_dtype="np.int32",
-        seg_offset=2**16,
-        dataset_type="semantickitti",
-        backend_args=backend_args,
-    ),
-    dict(type=PointSegClassMapping),
-    dict(
-        type=LoadVoxelLabelFromFile,
-        scale=scale,
-        ignore_index=ignore_index,
-        grid_size=grid_size,
-    ),
-    dict(
-        type=PackSscInputs,
-        keys=["points", "voxel_label", "pts_semantic_mask"],
-    ),
-]
-
 test_pipeline = [
+    dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
     dict(
-        type="LoadPointsFromFile",
-        coord_type="LIDAR",
-        load_dim=4,
-        use_dim=4,
+        type=LoadAnnotations3D,
+        with_bbox_3d=False,
+        with_label_3d=False,
+        with_seg_3d=True,
+        seg_3d_dtype="np.int32",
+        seg_offset=2**16,
+        dataset_type="semantickitti",
         backend_args=backend_args,
     ),
+    dict(type=PointSegClassMapping),
     dict(
-        type="LoadImageFromFile",
-        backend_args=backend_args,
+        type=SemkittiRangeView,
+        H=64,
+        W=512,
+        fov_up=3.0,
+        fov_down=-25.0,
+        means=(11.71279, -0.1023471, 0.4952, -1.0545, 0.2877),
+        stds=(10.24, 12.295865, 9.4287, 0.8643, 0.1450),
+        ignore_index=19,
     ),
-    dict(
-        type=PackSscInputs,
-        keys=["points"],
-    ),
+    dict(type=Pack3DDetInputs, keys=["img"], meta_keys=("proj_x", "proj_y", "proj_range", "unproj_range")),
 ]
 
 
@@ -224,18 +200,6 @@ val_split = dict(
     type=dataset_type,
     data_root=data_root,
     ann_file="semantickittiDataset_infos_val.pkl",
-    pipeline=val_pipeline,
-    metainfo=metainfo,
-    modality=input_modality,
-    test_mode=True,
-    backend_args=backend_args,
-    ignore_index=ignore_index,
-)
-
-test_split = dict(
-    type=dataset_type,
-    data_root=data_root,
-    ann_file="semantickittiDataset_infos_test.pkl",
     pipeline=test_pipeline,
     metainfo=metainfo,
     modality=input_modality,
@@ -261,14 +225,5 @@ val_dataloader = dict(
     dataset=val_split,
 )
 
-test_dataloader = dict(
-    batch_size=1,
-    num_workers=4,
-    persistent_workers=True,
-    drop_last=False,
-    sampler=dict(type=DefaultSampler, shuffle=False),
-    dataset=test_split,
-)
 
-val_evaluator = dict(type=SscMetric)
-test_evaluator = val_evaluator
+val_evaluator = dict(type=SegMetric)
