@@ -83,7 +83,7 @@ model = dict(
         act_cfg=dict(type=nn.Hardswish, inplace=True),
         init_cfg=dict(
             type="Pretrained",
-            checkpoint="/home/lms/code/occ-paper/work_dirs/cenet-64x2048_4xb4_semantickitti/epoch_9.pth",
+            checkpoint="/home/lms/code/occ-paper/work_dirs/cenet/epoch_25.pth",
             prefix="backbone",
         ),
     ),
