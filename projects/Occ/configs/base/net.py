@@ -7,9 +7,23 @@ from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
 from mmdet3d.models.data_preprocessors import Det3DDataPreprocessor
 from mmdet3d.models.losses import LovaszLoss
 
+from mmengine.config import read_base
+
+with read_base():
+    from .share_paramenter import *
+
 model = dict(
     type=RangeImageSegmentor,
-    data_preprocessor=dict(type=Det3DDataPreprocessor),
+    data_preprocessor=dict(
+        type=Det3DDataPreprocessor,
+        voxel_type="dynamic",
+        voxel_layer=dict(
+            max_num_points=-1,
+            point_cloud_range=point_cloud_range,
+            voxel_size=voxel_size,
+            max_voxels=(-1, -1),
+        ),
+    ),
     backbone=dict(
         type=CENet,
         in_channels=5,
@@ -31,7 +45,7 @@ model = dict(
         loss_lovasz=dict(type=LovaszLoss, loss_weight=1.5, reduction="none"),
         loss_boundary=dict(type=BoundaryLoss, loss_weight=1.0),
         conv_seg_kernel_size=1,
-        ignore_index=19,
+        ignore_index=free_index,
     ),
     auxiliary_head=[
         dict(
@@ -43,7 +57,7 @@ model = dict(
             loss_lovasz=dict(type=LovaszLoss, loss_weight=1.5, reduction="none"),
             loss_boundary=dict(type=BoundaryLoss, loss_weight=1.0),
             conv_seg_kernel_size=1,
-            ignore_index=19,
+            ignore_index=free_index,
             indices=2,
         ),
         dict(
@@ -55,7 +69,7 @@ model = dict(
             loss_lovasz=dict(type=LovaszLoss, loss_weight=1.5, reduction="none"),
             loss_boundary=dict(type=BoundaryLoss, loss_weight=1.0),
             conv_seg_kernel_size=1,
-            ignore_index=19,
+            ignore_index=free_index,
             indices=3,
         ),
         dict(
@@ -67,7 +81,7 @@ model = dict(
             loss_lovasz=dict(type=LovaszLoss, loss_weight=1.5, reduction="none"),
             loss_boundary=dict(type=BoundaryLoss, loss_weight=1.0),
             conv_seg_kernel_size=1,
-            ignore_index=19,
+            ignore_index=free_index,
             indices=4,
         ),
     ],

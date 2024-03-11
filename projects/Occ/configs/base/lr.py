@@ -1,13 +1,11 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from mmengine.optim.optimizer.amp_optimizer_wrapper import AmpOptimWrapper
 from mmengine.optim.optimizer.optimizer_wrapper import OptimWrapper
 from mmengine.optim.scheduler.lr_scheduler import OneCycleLR
 from torch.optim.adamw import AdamW
 
 # This schedule is mainly used on Semantickitti dataset in segmentation task
 optim_wrapper = dict(
-    type=AmpOptimWrapper,
-    loss_scale="dynamic",
+    type=OptimWrapper,
     optimizer=dict(
         type=AdamW,
         lr=0.01,
@@ -33,6 +31,7 @@ param_scheduler = [
 # runtime settings
 train_cfg = dict(by_epoch=True, max_epochs=50, val_interval=1)
 val_cfg = dict()
+test_cfg = dict()
 
 # Default setting for scaling LR automatically
 #   - `enable` means enable scaling LR automatically

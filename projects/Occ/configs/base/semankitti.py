@@ -154,7 +154,7 @@ train_pipeline = [
         fov_down=-25.0,
         means=(11.71279, -0.1023471, 0.4952, -1.0545, 0.2877),
         stds=(10.24, 12.295865, 9.4287, 0.8643, 0.1450),
-        ignore_index=19,
+        ignore_index=free_index,
     ),
     dict(type=Pack3DDetInputs, keys=["img", "gt_semantic_seg"]),
 ]
@@ -179,7 +179,7 @@ test_pipeline = [
         fov_down=-25.0,
         means=(11.71279, -0.1023471, 0.4952, -1.0545, 0.2877),
         stds=(10.24, 12.295865, 9.4287, 0.8643, 0.1450),
-        ignore_index=19,
+        ignore_index=free_index,
     ),
     dict(type=Pack3DDetInputs, keys=["img"], meta_keys=("proj_x", "proj_y", "proj_range", "unproj_range")),
 ]
@@ -193,7 +193,7 @@ train_split = dict(
     metainfo=metainfo,
     modality=input_modality,
     backend_args=backend_args,
-    ignore_index=ignore_index,
+    ignore_index=free_index,
 )
 
 val_split = dict(
@@ -205,11 +205,13 @@ val_split = dict(
     modality=input_modality,
     test_mode=True,
     backend_args=backend_args,
-    ignore_index=ignore_index,
+    ignore_index=free_index,
 )
 
+test_split = val_split
+
 train_dataloader = dict(
-    batch_size=1,
+    batch_size=4,
     num_workers=4,
     persistent_workers=True,
     sampler=dict(type=DefaultSampler, shuffle=True),
@@ -217,7 +219,7 @@ train_dataloader = dict(
 )
 
 val_dataloader = dict(
-    batch_size=1,
+    batch_size=4,
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
@@ -225,5 +227,8 @@ val_dataloader = dict(
     dataset=val_split,
 )
 
+test_dataloader = val_dataloader
+
 
 val_evaluator = dict(type=SegMetric)
+test_evaluator = val_evaluator

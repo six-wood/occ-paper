@@ -7,13 +7,39 @@ from mmdet3d.models import EncoderDecoder3D
 from mmdet3d.registry import MODELS
 from mmdet3d.structures import PointData
 from mmdet3d.structures.det3d_data_sample import OptSampleList, SampleList
+from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 
 
 @MODELS.register_module()
 class RangeImageSegmentor(EncoderDecoder3D):
+    def __init__(
+        self,
+        backbone: ConfigType = None,
+        bev_backbone: ConfigType = None,
+        decode_head: ConfigType = None,
+        neck: OptConfigType = None,
+        auxiliary_head: OptMultiConfig = None,
+        loss_regularization: OptMultiConfig = None,
+        train_cfg: OptConfigType = None,
+        test_cfg: OptConfigType = None,
+        data_preprocessor: OptConfigType = None,
+        init_cfg: OptMultiConfig = None,
+    ) -> None:
+        super(RangeImageSegmentor, self).__init__(
+            backbone=backbone,
+            decode_head=decode_head,
+            neck=neck,
+            auxiliary_head=auxiliary_head,
+            loss_regularization=loss_regularization,
+            train_cfg=train_cfg,
+            test_cfg=test_cfg,
+            data_preprocessor=data_preprocessor,
+            init_cfg=init_cfg,
+        )
+        if bev_backbone is not None:
+            self.bev_backbone = MODELS.build(bev_backbone)
 
-    def loss(self, batch_inputs_dict: dict,
-             batch_data_samples: SampleList) -> Dict[str, Tensor]:
+    def loss(self, batch_inputs_dict: dict, batch_data_samples: SampleList) -> Dict[str, Tensor]:
         """Calculate losses from a batch of inputs and data samples.
 
         Args:
@@ -30,7 +56,7 @@ class RangeImageSegmentor(EncoderDecoder3D):
             Dict[str, Tensor]: A dictionary of loss components.
         """
         # extract features using backbone
-        imgs = batch_inputs_dict['imgs']
+        imgs = batch_inputs_dict["imgs"]
         x = self.extract_feat(imgs)
 
         losses = dict()
@@ -39,15 +65,11 @@ class RangeImageSegmentor(EncoderDecoder3D):
         losses.update(loss_decode)
 
         if self.with_auxiliary_head:
-            loss_aux = self._auxiliary_head_forward_train(
-                x, batch_data_samples)
+            loss_aux = self._auxiliary_head_forward_train(x, batch_data_samples)
             losses.update(loss_aux)
         return losses
 
-    def predict(self,
-                batch_inputs_dict: dict,
-                batch_data_samples: SampleList,
-                rescale: bool = True) -> SampleList:
+    def predict(self, batch_inputs_dict: dict, batch_data_samples: SampleList, rescale: bool = True) -> SampleList:
         """Simple test with single scene.
 
         Args:
@@ -79,16 +101,13 @@ class RangeImageSegmentor(EncoderDecoder3D):
         for data_sample in batch_data_samples:
             batch_input_metas.append(data_sample.metainfo)
 
-        imgs = batch_inputs_dict['imgs']
+        imgs = batch_inputs_dict["imgs"]
         x = self.extract_feat(imgs)
-        seg_labels_list = self.decode_head.predict(x, batch_input_metas,
-                                                   self.test_cfg)
+        seg_labels_list = self.decode_head.predict(x, batch_input_metas, self.test_cfg)
 
         return self.postprocess_result(seg_labels_list, batch_data_samples)
 
-    def _forward(self,
-                 batch_inputs_dict: dict,
-                 batch_data_samples: OptSampleList = None) -> Tensor:
+    def _forward(self, batch_inputs_dict: dict, batch_data_samples: OptSampleList = None) -> Tensor:
         """Network forward process.
 
         Args:
@@ -104,12 +123,11 @@ class RangeImageSegmentor(EncoderDecoder3D):
         Returns:
             Tensor: Forward output of model without any post-processes.
         """
-        imgs = batch_inputs_dict['imgs']
+        imgs = batch_inputs_dict["imgs"]
         x = self.extract_feat(imgs)
         return self.decode_head.forward(x)
 
-    def postprocess_result(self, seg_labels_list: List[Tensor],
-                           batch_data_samples: SampleList) -> SampleList:
+    def postprocess_result(self, seg_labels_list: List[Tensor], batch_data_samples: SampleList) -> SampleList:
         """Convert results list to `Det3DDataSample`.
 
         Args:
@@ -130,6 +148,5 @@ class RangeImageSegmentor(EncoderDecoder3D):
         """
 
         for i, seg_pred in enumerate(seg_labels_list):
-            batch_data_samples[i].set_data(
-                {'pred_pts_seg': PointData(**{'pts_semantic_mask': seg_pred})})
+            batch_data_samples[i].set_data({"pred_pts_seg": PointData(**{"pts_semantic_mask": seg_pred})})
         return batch_data_samples

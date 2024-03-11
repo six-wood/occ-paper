@@ -23,6 +23,7 @@ class BasicBlock(BaseModule):
         norm_cfg: ConfigType = dict(type="BN"),
         act_cfg: ConfigType = dict(type="LeakyReLU"),
         init_cfg: OptMultiConfig = None,
+        frozen: bool = False,
     ) -> None:
         super(BasicBlock, self).__init__(init_cfg)
 
@@ -35,6 +36,9 @@ class BasicBlock(BaseModule):
         self.add_module(self.norm2_name, norm2)
         self.relu = build_activation_layer(act_cfg)
         self.downsample = downsample
+        if frozen:
+            for param in self.parameters():
+                param.requires_grad = False
 
     @property
     def norm1(self) -> nn.Module:
