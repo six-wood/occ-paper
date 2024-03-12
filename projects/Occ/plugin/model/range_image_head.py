@@ -101,26 +101,26 @@ class RangeImageHead(Base3DDecodeHead):
         Returns:
             List[Tensor]: List of point-wise segmentation labels.
         """
-        seg_logits = self.forward(inputs)
-        seg_labels = seg_logits.argmax(dim=1)
-        device = seg_logits.device
-        use_knn = test_cfg.get("use_knn", False)
-        if use_knn:
-            from .utils import KNN
 
-            post_module = KNN(test_cfg=test_cfg, num_classes=self.num_classes, ignore_index=self.ignore_index)
+        seg_labels = self.forward(inputs).argmax(dim=1)
+        # device = seg_logits.device
+        # use_knn = test_cfg.get("use_knn", False)
+        # if use_knn:
+        #     from .utils import KNN
 
-        seg_label_list = []
-        for i in range(len(batch_input_metas)):
-            input_metas = batch_input_metas[i]
-            proj_x = torch.tensor(input_metas["proj_x"], dtype=torch.int64, device=device)
-            proj_y = torch.tensor(input_metas["proj_y"], dtype=torch.int64, device=device)
-            proj_range = torch.tensor(input_metas["proj_range"], dtype=torch.float32, device=device)
-            unproj_range = torch.tensor(input_metas["unproj_range"], dtype=torch.float32, device=device)
+        #     post_module = KNN(test_cfg=test_cfg, num_classes=self.num_classes, ignore_index=self.ignore_index)
 
-            if use_knn:
-                seg_label_list.append(post_module(proj_range, unproj_range, seg_labels[i], proj_x, proj_y))
-            else:
-                seg_label_list.append(seg_labels[i, proj_y, proj_x])
+        # seg_label_list = []
+        # for i in range(len(batch_input_metas)):
+        #     input_metas = batch_input_metas[i]
+        #     proj_x = torch.tensor(input_metas["proj_x"], dtype=torch.int64, device=device)
+        #     proj_y = torch.tensor(input_metas["proj_y"], dtype=torch.int64, device=device)
+        #     proj_range = torch.tensor(input_metas["proj_range"], dtype=torch.float32, device=device)
+        #     unproj_range = torch.tensor(input_metas["unproj_range"], dtype=torch.float32, device=device)
 
-        return seg_label_list
+        #     if use_knn:
+        #         seg_label_list.append(post_module(proj_range, unproj_range, seg_labels[i], proj_x, proj_y))
+        #     else:
+        #         seg_label_list.append(seg_labels[i, proj_y, proj_x])
+
+        return seg_labels

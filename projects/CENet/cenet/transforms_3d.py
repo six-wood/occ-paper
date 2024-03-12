@@ -11,16 +11,16 @@ from mmdet3d.registry import TRANSFORMS
 class SemkittiRangeView(BaseTransform):
     """Convert Semantickitti point cloud dataset to range image."""
 
-    def __init__(
-        self,
-        H: int = 64,
-        W: int = 2048,
-        fov_up: float = 3.0,
-        fov_down: float = -25.0,
-        means: Sequence[float] = (11.71279, -0.1023471, 0.4952, -1.0545, 0.2877),
-        stds: Sequence[float] = (10.24, 12.295865, 9.4287, 0.8643, 0.1450),
-        ignore_index: int = 19,
-    ) -> None:
+    def __init__(self,
+                 H: int = 64,
+                 W: int = 2048,
+                 fov_up: float = 3.0,
+                 fov_down: float = -25.0,
+                 means: Sequence[float] = (11.71279, -0.1023471, 0.4952,
+                                           -1.0545, 0.2877),
+                 stds: Sequence[float] = (10.24, 12.295865, 9.4287, 0.8643,
+                                          0.1450),
+                 ignore_index: int = 19) -> None:
         self.H = H
         self.W = W
         self.fov_up = fov_up / 180.0 * np.pi
@@ -31,7 +31,7 @@ class SemkittiRangeView(BaseTransform):
         self.ignore_index = ignore_index
 
     def transform(self, results: dict) -> dict:
-        points_numpy = results["points"].numpy()
+        points_numpy = results['points'].numpy()
 
         proj_image = np.full((self.H, self.W, 5), -1, dtype=np.float32)
         proj_idx = np.full((self.H, self.W), -1, dtype=np.int64)
@@ -60,9 +60,9 @@ class SemkittiRangeView(BaseTransform):
         proj_y = np.minimum(self.H - 1, proj_y)
         proj_y = np.maximum(0, proj_y).astype(np.int64)
 
-        results["proj_x"] = proj_x
-        results["proj_y"] = proj_y
-        results["unproj_range"] = depth
+        results['proj_x'] = proj_x
+        results['proj_y'] = proj_y
+        results['unproj_range'] = depth
 
         # order in decreasing depth
         indices = np.arange(depth.shape[0])
@@ -71,60 +71,18 @@ class SemkittiRangeView(BaseTransform):
         proj_image[proj_y[order], proj_x[order], 0] = depth[order]
         proj_image[proj_y[order], proj_x[order], 1:] = points_numpy[order]
         proj_mask = (proj_idx > 0).astype(np.int32)
-        results["proj_range"] = proj_image[..., 0]
+        results['proj_range'] = proj_image[..., 0]
 
-        proj_image = (proj_image - self.means[None, None, :]) / self.stds[None, None, :]
+        proj_image = (proj_image -
+                      self.means[None, None, :]) / self.stds[None, None, :]
         proj_image = proj_image * proj_mask[..., None].astype(np.float32)
-        results["img"] = proj_image
+        results['img'] = proj_image
 
-        if "pts_semantic_mask" in results:
-            proj_sem_label = np.full((self.H, self.W), self.ignore_index, dtype=np.int64)
-            proj_sem_label[proj_y[order], proj_x[order]] = results["pts_semantic_mask"][order]
-            results["gt_semantic_seg"] = proj_sem_label
-
-            # label_show = np.full((self.H, self.W, 3), self.ignore_index, dtype=np.uint8)
-            # for i in range(20):
-            #     label_show[proj_sem_label == i] = palette[i]
-
-        return results
-
-
-palette = list(
-    [
-        [100, 150, 245],
-        [100, 230, 245],
-        [30, 60, 150],
-        [80, 30, 180],
-        [100, 80, 250],
-        [155, 30, 30],
-        [255, 40, 200],
-        [150, 30, 90],
-        [255, 0, 255],
-        [255, 150, 255],
-        [75, 0, 75],
-        [175, 0, 75],
-        [255, 200, 0],
-        [255, 120, 50],
-        [0, 175, 0],
-        [135, 60, 0],
-        [150, 240, 80],
-        [255, 240, 150],
-        [255, 0, 0],
-        [0, 0, 0],
-    ]
-)
-
-
-@TRANSFORMS.register_module()
-class LoadVoxelLabelFromFile(BaseTransform):
-    def __init__(
-        self,
-        grid_size=[256, 256, 32],
-    ) -> None:
-        self.grid_size = np.array(grid_size)
-
-    def transform(self, results: dict) -> dict:
-        target = np.load(results["voxel_label_path"]["1_1"])
-        target = target.reshape(-1).reshape(self.grid_size).astype(np.float32)
-        results["voxel_label"] = target
+        if 'pts_semantic_mask' in results:
+            proj_sem_label = np.full((self.H, self.W),
+                                     self.ignore_index,
+                                     dtype=np.int64)
+            proj_sem_label[proj_y[order],
+                           proj_x[order]] = results['pts_semantic_mask'][order]
+            results['gt_semantic_seg'] = proj_sem_label
         return results

@@ -9,9 +9,9 @@ from mmdet3d.datasets.transforms import (
     GlobalRotScaleTrans,
 )
 from mmdet3d.datasets.utils import Pack3DDetInputs
-from mmdet3d.evaluation.metrics import SegMetric
+from projects.Occ.plugin.evaluation.ssc_metric import SscMetric
 from projects.Occ.plugin.datasets.semantickitti_dataset import SemanticKittiSC as dataset_type
-from projects.Occ.plugin.datasets.transforms_3d import SemkittiRangeView
+from projects.Occ.plugin.datasets.transforms_3d import SemkittiRangeView, LoadVoxelLabelFromFile
 
 # from projects.Occ.plugin.evaluation.ssc_metric import SscMetric
 
@@ -138,6 +138,10 @@ train_pipeline = [
         backend_args=backend_args,
     ),
     dict(type=PointSegClassMapping),
+    dict(
+        type=LoadVoxelLabelFromFile,
+        grid_size=grid_size,
+    ),
     dict(type=PointSample, num_points=0.9),
     dict(type=RandomFlip3D, sync_2d=False, flip_ratio_bev_horizontal=0.5, flip_ratio_bev_vertical=0.5),
     dict(
@@ -156,7 +160,11 @@ train_pipeline = [
         stds=(10.24, 12.295865, 9.4287, 0.8643, 0.1450),
         ignore_index=free_index,
     ),
-    dict(type=Pack3DDetInputs, keys=["img", "gt_semantic_seg"]),
+    dict(
+        type=Pack3DDetInputs,
+        keys=["img", "gt_semantic_seg", "points"],
+        meta_keys=("voxel_label",),
+    ),
 ]
 test_pipeline = [
     dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
@@ -172,6 +180,10 @@ test_pipeline = [
     ),
     dict(type=PointSegClassMapping),
     dict(
+        type=LoadVoxelLabelFromFile,
+        grid_size=grid_size,
+    ),
+    dict(
         type=SemkittiRangeView,
         H=64,
         W=512,
@@ -181,7 +193,11 @@ test_pipeline = [
         stds=(10.24, 12.295865, 9.4287, 0.8643, 0.1450),
         ignore_index=free_index,
     ),
-    dict(type=Pack3DDetInputs, keys=["img"], meta_keys=("proj_x", "proj_y", "proj_range", "unproj_range")),
+    dict(
+        type=Pack3DDetInputs,
+        keys=["img", "points"],
+        meta_keys=("proj_x", "proj_y", "proj_range", "unproj_range", "voxel_label"),
+    ),
 ]
 
 
@@ -230,5 +246,5 @@ val_dataloader = dict(
 test_dataloader = val_dataloader
 
 
-val_evaluator = dict(type=SegMetric)
+val_evaluator = dict(type=SscMetric)
 test_evaluator = val_evaluator

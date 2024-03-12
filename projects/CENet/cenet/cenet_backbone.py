@@ -2,7 +2,8 @@
 from typing import Optional, Sequence, Tuple
 
 import torch
-from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
+from mmcv.cnn import (ConvModule, build_activation_layer, build_conv_layer,
+                      build_norm_layer)
 from mmengine.model import BaseModule
 from torch import Tensor, nn
 from torch.nn import functional as F
@@ -12,26 +13,34 @@ from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 
 
 class BasicBlock(BaseModule):
-    def __init__(
-        self,
-        inplanes: int,
-        planes: int,
-        stride: int = 1,
-        dilation: int = 1,
-        downsample: Optional[nn.Module] = None,
-        conv_cfg: OptConfigType = None,
-        norm_cfg: ConfigType = dict(type="BN"),
-        act_cfg: ConfigType = dict(type="LeakyReLU"),
-        init_cfg: OptMultiConfig = None,
-    ) -> None:
+
+    def __init__(self,
+                 inplanes: int,
+                 planes: int,
+                 stride: int = 1,
+                 dilation: int = 1,
+                 downsample: Optional[nn.Module] = None,
+                 conv_cfg: OptConfigType = None,
+                 norm_cfg: ConfigType = dict(type='BN'),
+                 act_cfg: ConfigType = dict(type='LeakyReLU'),
+                 init_cfg: OptMultiConfig = None) -> None:
         super(BasicBlock, self).__init__(init_cfg)
 
         self.norm1_name, norm1 = build_norm_layer(norm_cfg, planes, postfix=1)
         self.norm2_name, norm2 = build_norm_layer(norm_cfg, planes, postfix=2)
 
-        self.conv1 = build_conv_layer(conv_cfg, inplanes, planes, 3, stride=stride, padding=dilation, dilation=dilation, bias=False)
+        self.conv1 = build_conv_layer(
+            conv_cfg,
+            inplanes,
+            planes,
+            3,
+            stride=stride,
+            padding=dilation,
+            dilation=dilation,
+            bias=False)
         self.add_module(self.norm1_name, norm1)
-        self.conv2 = build_conv_layer(conv_cfg, planes, planes, 3, padding=1, bias=False)
+        self.conv2 = build_conv_layer(
+            conv_cfg, planes, planes, 3, padding=1, bias=False)
         self.add_module(self.norm2_name, norm2)
         self.relu = build_activation_layer(act_cfg)
         self.downsample = downsample
@@ -43,13 +52,11 @@ class BasicBlock(BaseModule):
 
     @property
     def norm2(self) -> nn.Module:
-        """nn.Module: normalization layer after the second convolution layer."""
+        """nn.Module: normalization layer after the second convolution layer.
+        """
         return getattr(self, self.norm2_name)
 
     def forward(self, x: Tensor) -> Tensor:
-        """
-        ResBlock: two conv layers with a residual connection.
-        """
         identity = x
 
         out = self.conv1(x)
@@ -68,27 +75,27 @@ class BasicBlock(BaseModule):
 
 
 @MODELS.register_module()
-class RangeNet(BaseModule):
-    def __init__(
-        self,
-        in_channels: int = 5,
-        stem_channels: int = 128,
-        num_stages: int = 4,
-        stage_blocks: Sequence[int] = (3, 4, 6, 3),
-        out_channels: Sequence[int] = (128, 128, 128, 128),
-        strides: Sequence[int] = (1, 2, 2, 2),
-        dilations: Sequence[int] = (1, 1, 1, 1),
-        fuse_channels: Sequence[int] = (256, 128),
-        conv_cfg: OptConfigType = None,
-        norm_cfg: ConfigType = dict(type="BN"),
-        act_cfg: ConfigType = dict(type="LeakyReLU"),
-        init_cfg=None,
-    ) -> None:
-        super(RangeNet, self).__init__(init_cfg)
+class CENet(BaseModule):
 
-        assert len(stage_blocks) == len(out_channels) == len(strides) == len(dilations) == num_stages, (
-            "The length of stage_blocks, out_channels, strides and " "dilations should be equal to num_stages"
-        )
+    def __init__(self,
+                 in_channels: int = 5,
+                 stem_channels: int = 128,
+                 num_stages: int = 4,
+                 stage_blocks: Sequence[int] = (3, 4, 6, 3),
+                 out_channels: Sequence[int] = (128, 128, 128, 128),
+                 strides: Sequence[int] = (1, 2, 2, 2),
+                 dilations: Sequence[int] = (1, 1, 1, 1),
+                 fuse_channels: Sequence[int] = (256, 128),
+                 conv_cfg: OptConfigType = None,
+                 norm_cfg: ConfigType = dict(type='BN'),
+                 act_cfg: ConfigType = dict(type='LeakyReLU'),
+                 init_cfg=None) -> None:
+        super(CENet, self).__init__(init_cfg)
+
+        assert len(stage_blocks) == len(out_channels) == len(strides) == len(
+            dilations) == num_stages, \
+            'The length of stage_blocks, out_channels, strides and ' \
+            'dilations should be equal to num_stages'
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
@@ -108,10 +115,9 @@ class RangeNet(BaseModule):
                 dilation=dilation,
                 conv_cfg=conv_cfg,
                 norm_cfg=norm_cfg,
-                act_cfg=act_cfg,
-            )
+                act_cfg=act_cfg)
             inplanes = planes
-            layer_name = f"layer{i + 1}"
+            layer_name = f'layer{i + 1}'
             self.add_module(layer_name, res_layer)
             self.res_layers.append(layer_name)
 
@@ -119,25 +125,47 @@ class RangeNet(BaseModule):
         self.fuse_layers = []
         for i, fuse_channel in enumerate(fuse_channels):
             fuse_layer = ConvModule(
-                in_channels, fuse_channel, kernel_size=3, padding=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg
-            )  # conv block that bundles conv/norm/activation layers.
+                in_channels,
+                fuse_channel,
+                kernel_size=3,
+                padding=1,
+                conv_cfg=conv_cfg,
+                norm_cfg=norm_cfg,
+                act_cfg=act_cfg)
             in_channels = fuse_channel
-            layer_name = f"fuse_layer{i + 1}"
+            layer_name = f'fuse_layer{i + 1}'
             self.add_module(layer_name, fuse_layer)
             self.fuse_layers.append(layer_name)
 
-    def _make_stem_layer(self, in_channels: int, out_channels: int) -> None:  # tree conv blocks in beginning
+    def _make_stem_layer(self, in_channels: int, out_channels: int) -> None:
         self.stem = nn.Sequential(
-            build_conv_layer(self.conv_cfg, in_channels, out_channels // 2, kernel_size=3, padding=1, bias=False),
+            build_conv_layer(
+                self.conv_cfg,
+                in_channels,
+                out_channels // 2,
+                kernel_size=3,
+                padding=1,
+                bias=False),
             build_norm_layer(self.norm_cfg, out_channels // 2)[1],
             build_activation_layer(self.act_cfg),
-            build_conv_layer(self.conv_cfg, out_channels // 2, out_channels, kernel_size=3, padding=1, bias=False),
+            build_conv_layer(
+                self.conv_cfg,
+                out_channels // 2,
+                out_channels,
+                kernel_size=3,
+                padding=1,
+                bias=False),
             build_norm_layer(self.norm_cfg, out_channels)[1],
             build_activation_layer(self.act_cfg),
-            build_conv_layer(self.conv_cfg, out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            build_conv_layer(
+                self.conv_cfg,
+                out_channels,
+                out_channels,
+                kernel_size=3,
+                padding=1,
+                bias=False),
             build_norm_layer(self.norm_cfg, out_channels)[1],
-            build_activation_layer(self.act_cfg),
-        )
+            build_activation_layer(self.act_cfg))
 
     def make_res_layer(
         self,
@@ -147,14 +175,20 @@ class RangeNet(BaseModule):
         stride: int,
         dilation: int,
         conv_cfg: OptConfigType = None,
-        norm_cfg: ConfigType = dict(type="BN"),
-        act_cfg: ConfigType = dict(type="LeakyReLU"),
+        norm_cfg: ConfigType = dict(type='BN'),
+        act_cfg: ConfigType = dict(type='LeakyReLU')
     ) -> nn.Sequential:
         downsample = None
-        if stride != 1 or inplanes != planes:  # downsample to match the dimensions
+        if stride != 1 or inplanes != planes:
             downsample = nn.Sequential(
-                build_conv_layer(conv_cfg, inplanes, planes, kernel_size=1, stride=stride, bias=False), build_norm_layer(norm_cfg, planes)[1]
-            )
+                build_conv_layer(
+                    conv_cfg,
+                    inplanes,
+                    planes,
+                    kernel_size=1,
+                    stride=stride,
+                    bias=False),
+                build_norm_layer(norm_cfg, planes)[1])
 
         layers = []
         layers.append(
@@ -166,14 +200,18 @@ class RangeNet(BaseModule):
                 downsample=downsample,
                 conv_cfg=conv_cfg,
                 norm_cfg=norm_cfg,
-                act_cfg=act_cfg,
-            )
-        )
+                act_cfg=act_cfg))
         inplanes = planes
         for _ in range(1, num_blocks):
             layers.append(
-                BasicBlock(inplanes=inplanes, planes=planes, stride=1, dilation=dilation, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
-            )  # add the residual blocks
+                BasicBlock(
+                    inplanes=inplanes,
+                    planes=planes,
+                    stride=1,
+                    dilation=dilation,
+                    conv_cfg=conv_cfg,
+                    norm_cfg=norm_cfg,
+                    act_cfg=act_cfg))
         return nn.Sequential(*layers)
 
     def forward(self, x: Tensor) -> Tuple[Tensor]:
@@ -187,9 +225,13 @@ class RangeNet(BaseModule):
         # TODO: move the following operation into neck.
         for i in range(len(outs)):
             if outs[i].shape != outs[0].shape:
-                outs[i] = F.interpolate(outs[i], size=outs[0].size()[2:], mode="bilinear", align_corners=True)  # interpolate to match the dimensions
+                outs[i] = F.interpolate(
+                    outs[i],
+                    size=outs[0].size()[2:],
+                    mode='bilinear',
+                    align_corners=True)
 
-        outs[0] = torch.cat(outs, dim=1)  # concatenate the outputs of the residual blocks
+        outs[0] = torch.cat(outs, dim=1)
 
         for layer_name in self.fuse_layers:
             fuse_layer = getattr(self, layer_name)

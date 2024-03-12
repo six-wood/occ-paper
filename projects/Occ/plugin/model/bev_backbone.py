@@ -1,22 +1,81 @@
 import torch
 import torch.nn as nn
-from typing import Sequence
 from torch import Tensor
-from mmcv.cnn import ConvModule
 from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
-from mmdet3d.utils import ConfigType, OptConfigType
-from .utils import make_res_layer
+from typing import Optional, Sequence, Tuple
+from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
+from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
+
+
+class BasicBlock(BaseModule):
+    def __init__(
+        self,
+        inplanes: int,
+        planes: int,
+        stride: int = 1,
+        dilation: int = 1,
+        downsample: Optional[nn.Module] = None,
+        conv_cfg: OptConfigType = None,
+        norm_cfg: ConfigType = dict(type="BN"),
+        act_cfg: ConfigType = dict(type="LeakyReLU"),
+        init_cfg: OptMultiConfig = None,
+        frozen: bool = False,
+    ) -> None:
+        super(BasicBlock, self).__init__(init_cfg)
+
+        self.norm1_name, norm1 = build_norm_layer(norm_cfg, planes, postfix=1)
+        self.norm2_name, norm2 = build_norm_layer(norm_cfg, planes, postfix=2)
+
+        self.conv1 = build_conv_layer(conv_cfg, inplanes, planes, 3, stride=stride, padding=dilation, dilation=dilation, bias=False)
+        self.add_module(self.norm1_name, norm1)
+        self.conv2 = build_conv_layer(conv_cfg, planes, planes, 3, padding=1, bias=False)
+        self.add_module(self.norm2_name, norm2)
+        self.relu = build_activation_layer(act_cfg)
+        self.downsample = downsample
+        if frozen:
+            for param in self.parameters():
+                param.requires_grad = False
+
+    @property
+    def norm1(self) -> nn.Module:
+        """nn.Module: normalization layer after the first convolution layer."""
+        return getattr(self, self.norm1_name)
+
+    @property
+    def norm2(self) -> nn.Module:
+        """nn.Module: normalization layer after the second convolution layer."""
+        return getattr(self, self.norm2_name)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        ResBlock: two conv layers with a residual connection.
+        """
+        identity = x
+
+        out = self.conv1(x)
+        out = self.norm1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.norm2(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+        return out
 
 
 @MODELS.register_module()
 class BevNet(BaseModule):
     def __init__(
         self,
-        bev_input_dimensions=32,
+        bev_input_dimensions: int = 32,
         bev_stem_channels: int = 32,
         bev_num_stages: int = 3,
-        bev_stage_blocks: Sequence[int] = (2, 4, 2),
+        bev_stage_blocks: Sequence[int] = (1, 1, 1),
         bev_strides: Sequence[int] = (2, 2, 2),
         bev_dilations: Sequence[int] = (1, 1, 1),
         bev_encoder_out_channels: Sequence[int] = (48, 64, 80),
@@ -53,7 +112,7 @@ class BevNet(BaseModule):
             stride = bev_strides[i]
             dilation = bev_dilations[i]
             planes = bev_encoder_out_channels[i]
-            res_layer = make_res_layer(
+            res_layer = self.make_res_layer(
                 inplanes=inplanes,
                 planes=planes,
                 num_blocks=num_blocks,
@@ -94,6 +153,43 @@ class BevNet(BaseModule):
             ConvModule(in_channels, out_channels, kernel_size=3, padding=1, conv_cfg=self.conv_cfg, norm_cfg=self.norm_cfg, act_cfg=self.act_cfg),
             ConvModule(out_channels, out_channels, kernel_size=3, padding=1, conv_cfg=self.conv_cfg, norm_cfg=self.norm_cfg, act_cfg=self.act_cfg),
         )
+
+    def make_res_layer(
+        self,
+        inplanes: int,
+        planes: int,
+        num_blocks: int,
+        stride: int,
+        dilation: int,
+        conv_cfg: OptConfigType = None,
+        norm_cfg: ConfigType = dict(type="BN"),
+        act_cfg: ConfigType = dict(type="LeakyReLU"),
+    ) -> nn.Sequential:
+        downsample = None
+        if stride != 1 or inplanes != planes:  # downsample to match the dimensions
+            downsample = nn.Sequential(
+                build_conv_layer(conv_cfg, inplanes, planes, kernel_size=1, stride=stride, bias=False), build_norm_layer(norm_cfg, planes)[1]
+            )
+
+        layers = []
+        layers.append(
+            BasicBlock(
+                inplanes=inplanes,
+                planes=planes,
+                stride=stride,
+                dilation=dilation,
+                downsample=downsample,
+                conv_cfg=conv_cfg,
+                norm_cfg=norm_cfg,
+                act_cfg=act_cfg,
+            )
+        )
+        inplanes = planes
+        for _ in range(1, num_blocks):
+            layers.append(
+                BasicBlock(inplanes=inplanes, planes=planes, stride=1, dilation=dilation, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
+            )  # add the residual blocks
+        return nn.Sequential(*layers)
 
     def forward(self, bev_map: Tensor = None):
         # Encoder

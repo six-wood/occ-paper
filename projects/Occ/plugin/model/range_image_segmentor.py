@@ -1,7 +1,8 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from typing import Dict, List
-
+import torch
 from torch import Tensor
+import numpy as np
 
 from mmdet3d.models import EncoderDecoder3D
 from mmdet3d.registry import MODELS
@@ -17,6 +18,7 @@ class RangeImageSegmentor(EncoderDecoder3D):
         backbone: ConfigType = None,
         bev_backbone: ConfigType = None,
         decode_head: ConfigType = None,
+        sc_head: ConfigType = None,
         neck: OptConfigType = None,
         auxiliary_head: OptMultiConfig = None,
         loss_regularization: OptMultiConfig = None,
@@ -38,6 +40,33 @@ class RangeImageSegmentor(EncoderDecoder3D):
         )
         if bev_backbone is not None:
             self.bev_backbone = MODELS.build(bev_backbone)
+        if sc_head is not None:
+            self.sc_head = MODELS.build(sc_head)
+
+        self.grid_shape = self.data_preprocessor.voxel_layer.grid_shape
+        self.pc_range = self.data_preprocessor.voxel_layer.point_cloud_range
+        self.voxel_size = self.data_preprocessor.voxel_layer.voxel_size
+
+    def extract_bev_feat(self, voxels: Tensor) -> Tensor:
+        """Extract features from BEV images.
+
+        Args:
+            imgs (Tensor): BEV images with shape (B, C, H, W).
+
+        Returns:
+            Tensor: Extracted features from BEV images.
+        """
+        coors = voxels["coors"]  # z y x
+        batch_size = coors[-1, 0] + 1
+        bev_map = torch.zeros(
+            (batch_size, self.grid_shape[2], self.grid_shape[0], self.grid_shape[1]),
+            dtype=torch.float32,
+            device=coors.device,
+        )  # channel first(height first)
+        bev_map[coors[:, 0], coors[:, 1], coors[:, 3], coors[:, 2]] = 1
+        bev_feature = self.bev_backbone(bev_map)  # channel first
+
+        return bev_feature
 
     def loss(self, batch_inputs_dict: dict, batch_data_samples: SampleList) -> Dict[str, Tensor]:
         """Calculate losses from a batch of inputs and data samples.
@@ -57,11 +86,16 @@ class RangeImageSegmentor(EncoderDecoder3D):
         """
         # extract features using backbone
         imgs = batch_inputs_dict["imgs"]
+        vxoels = batch_inputs_dict["voxels"]
         x = self.extract_feat(imgs)
+        y = self.extract_bev_feat(vxoels)
 
         losses = dict()
 
+        loss_geo = self.sc_head.loss(y, batch_data_samples)
         loss_decode = self._decode_head_forward_train(x, batch_data_samples)
+
+        losses.update(loss_geo)
         losses.update(loss_decode)
 
         if self.with_auxiliary_head:
@@ -102,10 +136,41 @@ class RangeImageSegmentor(EncoderDecoder3D):
             batch_input_metas.append(data_sample.metainfo)
 
         imgs = batch_inputs_dict["imgs"]
+        vxoels = batch_inputs_dict["voxels"]
         x = self.extract_feat(imgs)
-        seg_labels_list = self.decode_head.predict(x, batch_input_metas, self.test_cfg)
+        y = self.extract_bev_feat(vxoels)
 
-        return self.postprocess_result(seg_labels_list, batch_data_samples)
+        sem_labels = self.decode_head.predict(x, batch_input_metas, self.test_cfg)
+        geo_labels = self.sc_head.predict(y)
+
+        return self.postprocess_result(sem_labels, geo_labels, batch_data_samples)
+
+    def postprocess_result(self, sem_labels: List[Tensor], geo_labels: Tensor, batch_data_samples: SampleList) -> SampleList:
+        """Convert results list to `Det3DDataSample`.
+
+        Args:
+            seg_labels_list (List[Tensor]): List of segmentation results,
+                seg_logits from model of each input point clouds sample.
+            batch_data_samples (List[:obj:`Det3DDataSample`]): The det3d data
+                samples. It usually includes information such as `metainfo` and
+                `gt_pts_seg`.
+
+        Returns:
+            List[:obj:`Det3DDataSample`]: Segmentation results of the input
+            points. Each Det3DDataSample usually contains:
+
+            - ``pred_pts_seg`` (PointData): Prediction of 3D semantic
+              segmentation.
+            - ``pts_seg_logits`` (PointData): Predicted logits of 3D semantic
+              segmentation before normalization.
+        """
+        sc_true = np.stack([data_sample.metainfo["voxel_label"] for data_sample in batch_data_samples], axis=0)
+        sc_pred = geo_labels.cpu().numpy()
+        for i, batch_data in enumerate(batch_data_samples):
+            batch_data.set_data({"pred_pts_seg": PointData(**{"pts_semantic_mask": seg_pred})})
+            batch_data.set_data({"pts_seg_logits": {"y_pred": sc_pred[i]}})
+            batch_data.set_data({"pts_seg_labels": {"y_true": sc_true[i]}})
+        return batch_data_samples
 
     def _forward(self, batch_inputs_dict: dict, batch_data_samples: OptSampleList = None) -> Tensor:
         """Network forward process.
@@ -126,27 +191,3 @@ class RangeImageSegmentor(EncoderDecoder3D):
         imgs = batch_inputs_dict["imgs"]
         x = self.extract_feat(imgs)
         return self.decode_head.forward(x)
-
-    def postprocess_result(self, seg_labels_list: List[Tensor], batch_data_samples: SampleList) -> SampleList:
-        """Convert results list to `Det3DDataSample`.
-
-        Args:
-            seg_labels_list (List[Tensor]): List of segmentation results,
-                seg_logits from model of each input point clouds sample.
-            batch_data_samples (List[:obj:`Det3DDataSample`]): The det3d data
-                samples. It usually includes information such as `metainfo` and
-                `gt_pts_seg`.
-
-        Returns:
-            List[:obj:`Det3DDataSample`]: Segmentation results of the input
-            points. Each Det3DDataSample usually contains:
-
-            - ``pred_pts_seg`` (PointData): Prediction of 3D semantic
-              segmentation.
-            - ``pts_seg_logits`` (PointData): Predicted logits of 3D semantic
-              segmentation before normalization.
-        """
-
-        for i, seg_pred in enumerate(seg_labels_list):
-            batch_data_samples[i].set_data({"pred_pts_seg": PointData(**{"pts_semantic_mask": seg_pred})})
-        return batch_data_samples
