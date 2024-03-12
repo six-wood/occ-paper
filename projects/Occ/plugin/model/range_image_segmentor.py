@@ -164,13 +164,55 @@ class RangeImageSegmentor(EncoderDecoder3D):
             - ``pts_seg_logits`` (PointData): Predicted logits of 3D semantic
               segmentation before normalization.
         """
+        voxel_size = torch.tensor(self.voxel_size, device=geo_labels.device)
+        pc_lowest = torch.tensor(self.pc_range[:3], device=geo_labels.device)
+        indices_grid = torch.nonzero(geo_labels)
+        indices_3d = indices_grid[:, 1:] * voxel_size + pc_lowest
+
+        indices_2d = self.transform_3d2d(indices_3d, H=64, W=512, fov_down=-25.0, fov_up=3.0)
+        geo_labels[indices_grid[:, 0], indices_grid[:, 1], indices_grid[:, 2], indices_grid[:, 3]] = sem_labels[
+            indices_grid[:, 0], indices_2d[:, 0], indices_2d[:, 1]
+        ]
+
         sc_true = np.stack([data_sample.metainfo["voxel_label"] for data_sample in batch_data_samples], axis=0)
         sc_pred = geo_labels.cpu().numpy()
         for i, batch_data in enumerate(batch_data_samples):
-            batch_data.set_data({"pred_pts_seg": PointData(**{"pts_semantic_mask": seg_pred})})
-            batch_data.set_data({"pts_seg_logits": {"y_pred": sc_pred[i]}})
-            batch_data.set_data({"pts_seg_labels": {"y_true": sc_true[i]}})
+            batch_data.set_data({"y_pred": sc_pred[i]})
+            batch_data.set_data({"y_true": sc_true[i]})
         return batch_data_samples
+
+    def transform_3d2d(self, points: Tensor, H=64, W=512, fov_down=-25.0, fov_up=3.0):
+        fov_down = fov_down / 180.0 * np.pi
+        fov = abs(fov_down) + abs(fov_up)
+        W = torch.tensor(W, device=points.device)
+        H = torch.tensor(H, device=points.device)
+        zero = torch.tensor(0, device=points.device)
+
+        # get depth of all points
+        depth = torch.norm(points[:, :3], 2, dim=1)
+
+        # get angles of all points
+        yaw = -torch.arctan2(points[:, 1], points[:, 0])
+        pitch = torch.arcsin(points[:, 2] / (depth + 1e-6))
+
+        # get projection in image coords
+        proj_x = 0.5 * (yaw / torch.pi + 1.0)
+        proj_y = 1.0 - (pitch + abs(fov_down)) / fov
+
+        # scale to image size using angular resolution
+        proj_x *= W
+        proj_y *= H
+
+        # round and clamp for use as index
+        proj_x = torch.floor(proj_x)
+        proj_x = torch.minimum(W - 1, proj_x)
+        proj_x = torch.maximum(zero, proj_x).to(torch.int64)
+
+        proj_y = torch.floor(proj_y)
+        proj_y = torch.minimum(H - 1, proj_y)
+        proj_y = torch.maximum(zero, proj_y).to(torch.int64)
+
+        return torch.stack([proj_y, proj_x], dim=1)
 
     def _forward(self, batch_inputs_dict: dict, batch_data_samples: OptSampleList = None) -> Tensor:
         """Network forward process.

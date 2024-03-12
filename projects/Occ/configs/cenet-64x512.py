@@ -31,8 +31,8 @@ optim_wrapper.update(
     )
 )
 # debug
-train_dataloader.update(dataset=dict(indices=5))
-train_dataloader.update(batch_size=2)
+# train_dataloader.update(dataset=dict(indices=5))
+# train_dataloader.update(batch_size=2)
 
-val_dataloader.update(batch_size=2)
-val_dataloader.update(dataset=dict(indices=5))
+# val_dataloader.update(batch_size=2)
+# val_dataloader.update(dataset=dict(indices=5))
