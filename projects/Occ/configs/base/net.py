@@ -44,7 +44,7 @@ model = dict(
         bev_input_dimensions=32,
         bev_stem_channels=32,
         bev_num_stages=3,
-        bev_stage_blocks=(1, 1, 1),
+        bev_stage_blocks=(2, 2, 2),
         bev_strides=(2, 2, 2),
         bev_dilations=(1, 1, 1),
         bev_encoder_out_channels=(48, 64, 80),
@@ -67,7 +67,7 @@ model = dict(
         loss_geo=dict(
             type=CrossEntropyLoss,
             class_weight=geo_class_weight,
-            loss_weight=1.0,
+            loss_weight=10.0,
         ),
     ),
     auxiliary_head=[
@@ -108,6 +108,4 @@ model = dict(
             indices=4,
         ),
     ],
-    train_cfg=None,
-    test_cfg=dict(use_knn=True, knn=7, search=7, sigma=1.0, cutoff=2.0),
 )

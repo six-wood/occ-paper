@@ -7,6 +7,12 @@ with read_base():
     from .base.semankitti import *
     from mmdet3d.configs._base_.default_runtime import *
 
+default_hooks.update(
+    dict(
+        logger=dict(type=LoggerHook, interval=10),
+        checkpoint=dict(type=CheckpointHook, interval=1),
+    )
+)
 
 # debug
 # train_dataloader.update(dataset=dict(indices=5))

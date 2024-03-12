@@ -13,7 +13,7 @@ from mmdet3d.datasets.transforms import (
 from mmdet3d.datasets.utils import Pack3DDetInputs
 from projects.sc.plugin.evaluation.ssc_metric import SscMetric
 from projects.sc.plugin.datasets.semantickitti_dataset import SemanticKittiSC as dataset_type
-from projects.sc.plugin.datasets.transforms_3d import SemkittiRangeView, LoadVoxelLabelFromFile
+from projects.sc.plugin.datasets.transforms_3d import SemkittiRangeView, LoadVoxelLabelFromFile, ApplyVisMask
 
 # from projects.sc.plugin.evaluation.ssc_metric import SscMetric
 
@@ -144,6 +144,7 @@ train_pipeline = [
         type=LoadVoxelLabelFromFile,
         grid_size=grid_size,
     ),
+    dict(type=ApplyVisMask),
     dict(
         type=SemkittiRangeView,
         H=64,
@@ -177,6 +178,7 @@ test_pipeline = [
         type=LoadVoxelLabelFromFile,
         grid_size=grid_size,
     ),
+    dict(type=ApplyVisMask),
     dict(
         type=SemkittiRangeView,
         H=64,

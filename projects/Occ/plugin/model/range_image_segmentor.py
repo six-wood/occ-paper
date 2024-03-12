@@ -165,8 +165,16 @@ class RangeImageSegmentor(EncoderDecoder3D):
             - ``pts_seg_logits`` (PointData): Predicted logits of 3D semantic
               segmentation before normalization.
         """
+        # proj_sem_label = sem_labels[0].cpu().numpy()
+        # label_show = np.full((64, 512, 3), 0, dtype=np.uint8)
+        # for i in range(20):
+        #     label_show[proj_sem_label == i] = palette[i]
+
+        # point = torch.tensor([[10, 0, 0], [20, 0, 0]], device=geo_labels.device, dtype=torch.float32)
+
         voxel_size = torch.tensor(self.voxel_size, device=geo_labels.device)
         pc_lowest = torch.tensor(self.pc_range[:3], device=geo_labels.device)
+        geo_labels[:, 0, 0, 0] = 0
         indices_grid = torch.nonzero(geo_labels)
         indices_3d = indices_grid[:, 1:] * voxel_size + pc_lowest
 
@@ -194,7 +202,7 @@ class RangeImageSegmentor(EncoderDecoder3D):
 
         # get angles of all points
         yaw = -torch.arctan2(points[:, 1], points[:, 0])
-        pitch = torch.arcsin(points[:, 2] / (depth + 1e-6))
+        pitch = torch.arcsin(points[:, 2] / depth)
 
         # get projection in image coords
         proj_x = 0.5 * (yaw / torch.pi + 1.0)
@@ -234,3 +242,29 @@ class RangeImageSegmentor(EncoderDecoder3D):
         imgs = batch_inputs_dict["imgs"]
         x = self.extract_feat(imgs)
         return self.decode_head.forward(x)
+
+
+palette = list(
+    [
+        [0, 0, 0],
+        [100, 150, 245],
+        [100, 230, 245],
+        [30, 60, 150],
+        [80, 30, 180],
+        [100, 80, 250],
+        [155, 30, 30],
+        [255, 40, 200],
+        [150, 30, 90],
+        [255, 0, 255],
+        [255, 150, 255],
+        [75, 0, 75],
+        [175, 0, 75],
+        [255, 200, 0],
+        [255, 120, 50],
+        [0, 175, 0],
+        [135, 60, 0],
+        [150, 240, 80],
+        [255, 240, 150],
+        [255, 0, 0],
+    ]
+)

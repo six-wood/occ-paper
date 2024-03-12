@@ -8,6 +8,13 @@ with read_base():
 
 custom_imports = dict(imports=["projects.Occ.plugin"], allow_failed_imports=False)
 
+default_hooks.update(
+    dict(
+        logger=dict(type=LoggerHook, interval=10),
+        checkpoint=dict(type=CheckpointHook, interval=1),
+    )
+)
+
 model.update(
     dict(
         init_cfg=dict(
@@ -31,8 +38,8 @@ optim_wrapper.update(
     )
 )
 # debug
-# train_dataloader.update(dataset=dict(indices=5))
-# train_dataloader.update(batch_size=2)
+# train_dataloader.update(dataset=dict(indices=1))
+# train_dataloader.update(batch_size=1)
 
-# val_dataloader.update(batch_size=2)
-# val_dataloader.update(dataset=dict(indices=5))
+# val_dataloader.update(batch_size=1)
+# val_dataloader.update(dataset=dict(indices=1))
