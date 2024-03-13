@@ -86,7 +86,7 @@ class CENet(BaseModule):
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
         act_cfg: ConfigType = dict(type="LeakyReLU"),
-        init_cfg=None,
+        init_cfg: OptMultiConfig = None,
     ) -> None:
         super(CENet, self).__init__(init_cfg)
 

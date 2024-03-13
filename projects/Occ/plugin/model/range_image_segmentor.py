@@ -191,8 +191,10 @@ class RangeImageSegmentor(EncoderDecoder3D):
         return batch_data_samples
 
     def transform_3d2d(self, points: Tensor, H=64, W=512, fov_down=-25.0, fov_up=3.0):
-        fov_down = fov_down / 180.0 * np.pi
-        fov = abs(fov_down) + abs(fov_up)
+        fov_down_pi = fov_down / 180.0 * np.pi
+        fov_up_pi = fov_up / 180.0 * np.pi
+        fov_pi = abs(fov_down_pi) + abs(fov_up_pi)
+
         W = torch.tensor(W, device=points.device)
         H = torch.tensor(H, device=points.device)
         zero = torch.tensor(0, device=points.device)
@@ -202,11 +204,11 @@ class RangeImageSegmentor(EncoderDecoder3D):
 
         # get angles of all points
         yaw = -torch.arctan2(points[:, 1], points[:, 0])
-        pitch = torch.arcsin(points[:, 2] / depth)
+        pitch = torch.arcsin(points[:, 2] / (depth + 1e-6))
 
         # get projection in image coords
         proj_x = 0.5 * (yaw / torch.pi + 1.0)
-        proj_y = 1.0 - (pitch + abs(fov_down)) / fov
+        proj_y = 1.0 - (pitch + abs(fov_down_pi)) / fov_pi
 
         # scale to image size using angular resolution
         proj_x *= W

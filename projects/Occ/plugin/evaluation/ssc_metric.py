@@ -277,7 +277,7 @@ class SscMetric(BaseMetric):
         header = ["classes"]
         for i in range(len(label2cat)):
             header.append(label2cat[i])
-        header.extend(["iou", "miou", "acc", "recall"])
+        header.extend(["iou", "miou", "precision", "recall"])
 
         ret_dict = dict()
         table_columns = [["results"]]

@@ -1,17 +1,18 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 import torch
 from torch import Tensor, nn
 
 from mmdet3d.models import Base3DDecodeHead
+from mmengine.model import BaseModule
 from mmdet3d.registry import MODELS
 from mmdet3d.structures.det3d_data_sample import SampleList
-from mmdet3d.utils import ConfigType, OptConfigType
+from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 
 
 @MODELS.register_module()
-class RangeImageHead(Base3DDecodeHead):
+class RangeImageHead(BaseModule):
     """RangeImage decoder head.
 
     Args:
@@ -30,14 +31,35 @@ class RangeImageHead(Base3DDecodeHead):
 
     def __init__(
         self,
+        channels: int,
+        num_classes: int,
         loss_ce: ConfigType = dict(type="mmdet.CrossEntropyLoss", use_sigmoid=False, class_weight=None, loss_weight=1.0),
         loss_lovasz: OptConfigType = None,
         loss_boundary: OptConfigType = None,
         indices: int = 0,
-        frozen: bool = False,
-        **kwargs
+        dropout_ratio: float = 0.5,
+        conv_cfg: ConfigType = dict(type="Conv1d"),
+        norm_cfg: ConfigType = dict(type="BN1d"),
+        act_cfg: ConfigType = dict(type="ReLU"),
+        conv_seg_kernel_size: int = 1,
+        ignore_index: int = 255,
+        init_cfg: OptMultiConfig = None,
     ) -> None:
-        super(RangeImageHead, self).__init__(**kwargs)
+        super(RangeImageHead, self).__init__(init_cfg=init_cfg)
+
+        self.channels = channels
+        self.num_classes = num_classes
+        self.dropout_ratio = dropout_ratio
+        self.conv_cfg = conv_cfg
+        self.norm_cfg = norm_cfg
+        self.act_cfg = act_cfg
+        self.ignore_index = ignore_index
+
+        self.conv_seg = self.build_conv_seg(channels=channels, num_classes=num_classes, kernel_size=conv_seg_kernel_size)
+        if dropout_ratio > 0:
+            self.dropout = nn.Dropout(dropout_ratio)
+        else:
+            self.dropout = None
 
         self.loss_ce = MODELS.build(loss_ce)
         if loss_lovasz is not None:
@@ -50,9 +72,13 @@ class RangeImageHead(Base3DDecodeHead):
             self.loss_boundary = None
 
         self.indices = indices
-        if frozen:
-            for param in self.parameters():
-                param.requires_grad = False
+
+    def cls_seg(self, feat: Tensor) -> Tensor:
+        """Classify each points."""
+        if self.dropout is not None:
+            feat = self.dropout(feat)
+        output = self.conv_seg(feat)
+        return output
 
     def build_conv_seg(self, channels: int, num_classes: int, kernel_size: int) -> nn.Module:
         return nn.Conv2d(channels, num_classes, kernel_size=kernel_size)
@@ -87,6 +113,23 @@ class RangeImageHead(Base3DDecodeHead):
         if self.loss_boundary:
             loss["loss_boundary"] = self.loss_boundary(seg_logit, seg_label)
         return loss
+
+    def loss(self, inputs: dict, batch_data_samples: SampleList, train_cfg: ConfigType) -> Dict[str, Tensor]:
+        """Forward function for training.
+
+        Args:
+            inputs (dict): Feature dict from backbone.
+            batch_data_samples (List[:obj:`Det3DDataSample`]): The seg data
+                samples. It usually includes information such as `metainfo` and
+                `gt_pts_seg`.
+            train_cfg (dict or :obj:`ConfigDict`): The training config.
+
+        Returns:
+            Dict[str, Tensor]: A dictionary of loss components.
+        """
+        seg_logits = self.forward(inputs)
+        losses = self.loss_by_feat(seg_logits, batch_data_samples)
+        return losses
 
     def predict(self, inputs: Tuple[Tensor], batch_input_metas: List[dict], test_cfg: ConfigType) -> torch.Tensor:
         """Forward function for testing.

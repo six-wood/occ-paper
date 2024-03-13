@@ -83,8 +83,9 @@ class BevNet(BaseModule):
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
         act_cfg: ConfigType = dict(type="LeakyReLU"),
+        init_cfg: OptMultiConfig = None,
     ):
-        super().__init__()
+        super().__init__(init_cfg=init_cfg)
         """
         SSCNet architecture
         :param N: number of classes to be predicted (i.e. 12 for NYUv2)

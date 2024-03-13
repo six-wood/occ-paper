@@ -17,10 +17,34 @@ default_hooks.update(
 
 model.update(
     dict(
-        init_cfg=dict(
-            type="Pretrained",
-            checkpoint="/home/lms/code/occ-paper/work_dirs/cenet/epoch_45.pth",
-        )
+        backbone=dict(
+            init_cfg=dict(
+                type="Pretrained",
+                checkpoint="/home/lms/code/occ-paper/work_dirs/cenet/epoch_45.pth",
+                prefix="backbone",
+            ),
+        ),
+        bev_backbone=dict(
+            init_cfg=dict(
+                type="Pretrained",
+                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_17.pth",
+                prefix="bev_backbone",
+            ),
+        ),
+        decode_head=dict(
+            init_cfg=dict(
+                type="Pretrained",
+                checkpoint="/home/lms/code/occ-paper/work_dirs/cenet/epoch_45.pth",
+                prefix="decode_head",
+            ),
+        ),
+        sc_head=dict(
+            init_cfg=dict(
+                type="Pretrained",
+                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_17.pth",
+                prefix="sc_head",
+            ),
+        ),
     )
 )
 
@@ -29,10 +53,9 @@ optim_wrapper.update(
         paramwise_cfg=dict(
             custom_keys={
                 "backbone": dict(lr=1e-3),
+                "bev_backbone": dict(lr=1e-3),
                 "decode_head": dict(lr=1e-3),
-                "auxiliary_head.0": dict(lr=1e-3),
-                "auxiliary_head.1": dict(lr=1e-3),
-                "auxiliary_head.2": dict(lr=1e-3),
+                "sc_head": dict(lr=1e-3),
             }
         )
     )

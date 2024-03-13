@@ -9,7 +9,7 @@ from torch import Tensor
 from torch import nn as nn
 
 from mmdet3d.registry import MODELS
-from mmdet3d.utils.typing_utils import ConfigType
+from mmdet3d.utils.typing_utils import ConfigType, OptMultiConfig
 from mmdet3d.structures.det3d_data_sample import SampleList
 
 from mmcv.cnn import ConvModule
@@ -31,10 +31,11 @@ class ScHead(BaseModule):
         conv_cfg: ConfigType = dict(type="Conv3d"),
         norm_cfg: ConfigType = dict(type="BN3d"),
         act_cfg: ConfigType = dict(type="ReLU"),
+        init_cfg: OptMultiConfig = None,
         ignore_index: int = 255,
         free_index: int = 0,
     ):
-        super(ScHead, self).__init__()
+        super(ScHead, self).__init__(init_cfg=init_cfg)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
