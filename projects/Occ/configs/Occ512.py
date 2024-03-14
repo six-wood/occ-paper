@@ -1,4 +1,5 @@
 from mmengine.config import read_base
+from mmengine.model import MMDistributedDataParallel
 
 with read_base():
     from .base.lr import *
@@ -27,7 +28,7 @@ model.update(
         bev_backbone=dict(
             init_cfg=dict(
                 type="Pretrained",
-                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_17.pth",
+                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_16.pth",
                 prefix="bev_backbone",
             ),
         ),
@@ -41,7 +42,7 @@ model.update(
         sc_head=dict(
             init_cfg=dict(
                 type="Pretrained",
-                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_17.pth",
+                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_16.pth",
                 prefix="sc_head",
             ),
         ),
@@ -52,14 +53,19 @@ optim_wrapper.update(
     dict(
         paramwise_cfg=dict(
             custom_keys={
-                "backbone": dict(lr=1e-3),
-                "bev_backbone": dict(lr=1e-3),
-                "decode_head": dict(lr=1e-3),
-                "sc_head": dict(lr=1e-3),
+                "backbone": dict(lr_mult=0.1),
+                "decode_head": dict(lr_mult=0.1),
+                "bev_backbone": dict(lr_mult=0.1),
+                "sc_head": dict(lr_mult=0.1),
+                "sparse_backbone": dict(lr_mult=1),
+                "ssc_head": dict(lr_mult=1),
             }
         )
     )
 )
+
+model_wrapper_cfg = dict(type="MMDistributedDataParallel", detect_anomalous_params=True)
+
 # debug
 # train_dataloader.update(dataset=dict(indices=1))
 # train_dataloader.update(batch_size=1)

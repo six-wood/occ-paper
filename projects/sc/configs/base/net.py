@@ -68,8 +68,8 @@ model = dict(
         loss_geo=dict(
             type=CrossEntropyLoss,
             class_weight=geo_class_weight,
+            ignore_index=ignore_index,
             loss_weight=1.0,
         ),
     ),
 )
-

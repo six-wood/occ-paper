@@ -27,7 +27,7 @@ class ScHead(BaseModule):
     def __init__(
         self,
         loss_focal: ConfigType = None,
-        loss_geo: ConfigType = None,
+        loss_ce: ConfigType = None,
         conv_cfg: ConfigType = dict(type="Conv3d"),
         norm_cfg: ConfigType = dict(type="BN3d"),
         act_cfg: ConfigType = dict(type="ReLU"),
@@ -46,8 +46,8 @@ class ScHead(BaseModule):
 
         if loss_focal is not None:
             self.loss_focal = MODELS.build(loss_focal)
-        if loss_geo is not None:
-            self.loss_geo = MODELS.build(loss_geo)
+        if loss_ce is not None:
+            self.loss_ce = MODELS.build(loss_ce)
 
     def forward(self, fea: Tensor = None) -> Tensor:
         return self.sc_class(fea)
@@ -76,7 +76,7 @@ class ScHead(BaseModule):
         losses = dict()
         # if hasattr(self, "loss_focal"):
         #     loss["loss_focal"] = self.loss_focal(seg_logit, seg_label, weight=self.class_weights, ignore_index=self.ignore_index)
-        losses["loss_sc_ce"] = self.loss_geo(geo_logits, geo_label, ignore_index=self.ignore_index)
+        losses["loss_ce"] = self.loss_ce(geo_logits, geo_label, ignore_index=self.ignore_index)
         return losses
 
     def loss(self, geo_fea: Tensor, batch_data_samples: SampleList, train_cfg: ConfigType = None) -> Dict[str, Tensor]:

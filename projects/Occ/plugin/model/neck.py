@@ -14,8 +14,7 @@ from mmcv.cnn import ConvModule
 class FusionNet(BaseModule):
     def __init__(
         self,
-        bev_inplanes: int = 1,
-        bev_outplanes: int = 2,
+        indices: int = 0,
         voxel_size: List = [0.2, 0.2, 0.2],
         pc_range: List = [0, -25.6, -2, 51.2, 25.6, 4.4],
         range_shape: List = [64, 512],
@@ -32,15 +31,17 @@ class FusionNet(BaseModule):
         self.pc_range = torch.tensor(pc_range)
         self.range_shape = torch.tensor(range_shape)
         self.range_fov = torch.tensor(range_fov)
-        self.weight_conv = ConvModule(bev_inplanes, 1, 1, conv_cfg=dict(type=nn.Conv1d), norm_cfg=norm_cfg, act_cfg=act_cfg)
+        self.indices = indices
 
-    def transform_3d2d(self, points: Tensor, H=64, W=512, fov_down=-25.0, fov_up=3.0):
+    def transform_3d2d(self, points: Tensor):
+        H = self.range_shape[0].to(points.device)
+        W = self.range_shape[1].to(points.device)
+        fov_down = self.range_fov[0].to(points.device)
+        fov_up = self.range_fov[1].to(points.device)
+
         fov_down_pi = fov_down / 180.0 * np.pi
         fov_up_pi = fov_up / 180.0 * np.pi
         fov_pi = abs(fov_down_pi) + abs(fov_up_pi)
-
-        W = torch.tensor(W, device=points.device)
-        H = torch.tensor(H, device=points.device)
         zero = torch.tensor(0, device=points.device)
 
         # get depth of all points
@@ -76,19 +77,15 @@ class FusionNet(BaseModule):
         indices_grid = torch.nonzero(geo_pred)
         indices_3d = indices_grid[:, 1:] * voxel_size + pc_lowest
 
-        indices_2d = self.transform_3d2d(indices_3d, H=64, W=512, fov_down=-25.0, fov_up=3.0)
-        sem_feature = range_fea[indices_grid[:, 0], :, indices_2d[:, 0], indices_2d[:, 1]]
-        # init
+        indices_2d = self.transform_3d2d(indices_3d)
+        sem_fea = range_fea[self.indices][indices_grid[:, 0], :, indices_2d[:, 0], indices_2d[:, 1]]
 
-        # bev_fea = bev_fea.permute(0, 2, 3, 1).contiguous()
-        # geo_fea_sample = bev_fea[
-        #     sc_query_grid_coor[:, :, 0],
-        #     sc_query_grid_coor[:, :, 1],
-        #     sc_query_grid_coor[:, :, 2],
-        #     sc_query_grid_coor[:, :, 3],
-        # ].unsqueeze(1)
-        # weight = self.weight_conv(geo_fea_sample)
-        # sem_fea = weight * sem_fea + geo_fea_sample
+        # geo_fea_smaple = geo_fea.permute(0, 2, 3, 1).contiguous()[indices_grid[:, 0], indices_grid[:, 1], indices_grid[:, 2], indices_grid[:, 3]]
+        # weight = self.weight_conv(geo_fea_smaple)
+        # sem_fea = weight * sem_fea + geo_fea_smaple
 
-        # return geo_fea, sem_fea, sc_query_grid_coor
-        return None
+        indices_grid_copy = indices_grid.clone()
+        indices_grid[:, 0:3] = indices_grid_copy[:, 1:4]
+        indices_grid[:, 3] = indices_grid_copy[:, 0]
+
+        return sem_fea, indices_grid.to(torch.int)

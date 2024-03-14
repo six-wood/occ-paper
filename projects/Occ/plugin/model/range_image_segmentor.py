@@ -9,6 +9,7 @@ from mmdet3d.registry import MODELS
 from mmdet3d.structures import PointData
 from mmdet3d.structures.det3d_data_sample import OptSampleList, SampleList
 from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
+from mmdet3d.models.utils import add_prefix
 
 
 @MODELS.register_module()
@@ -20,6 +21,8 @@ class RangeImageSegmentor(EncoderDecoder3D):
         decode_head: ConfigType = None,
         sc_head: ConfigType = None,
         neck: OptConfigType = None,
+        sparse_backbone: OptConfigType = None,
+        ssc_head: OptConfigType = None,
         auxiliary_head: OptMultiConfig = None,
         loss_regularization: OptMultiConfig = None,
         train_cfg: OptConfigType = None,
@@ -43,10 +46,19 @@ class RangeImageSegmentor(EncoderDecoder3D):
             self.bev_backbone = MODELS.build(bev_backbone)
         if sc_head is not None:
             self.sc_head = MODELS.build(sc_head)
+        if sparse_backbone is not None:
+            self.sparse_backbone = MODELS.build(sparse_backbone)
+        if ssc_head is not None:
+            self.ssc_head = MODELS.build(ssc_head)
 
         self.grid_shape = self.data_preprocessor.voxel_layer.grid_shape
         self.pc_range = self.data_preprocessor.voxel_layer.point_cloud_range
         self.voxel_size = self.data_preprocessor.voxel_layer.voxel_size
+
+    def extract_feat(self, batch_inputs: Tensor) -> dict:
+        """Extract features from points."""
+        x = self.backbone(batch_inputs)
+        return x
 
     def extract_bev_feat(self, voxels: Tensor) -> Tensor:
         """Extract features from BEV images.
@@ -88,16 +100,25 @@ class RangeImageSegmentor(EncoderDecoder3D):
         # extract features using backbone
         imgs = batch_inputs_dict["imgs"]
         vxoels = batch_inputs_dict["voxels"]
+
         x = self.extract_feat(imgs)
         y = self.extract_bev_feat(vxoels)
 
+        geo_pred = self.sc_head.predict(y)
+        sem_fea, coors = self.neck(y, geo_pred, x)
+        sem_fea = self.sparse_backbone(sem_fea, coors)
+
+        sem_dict = {"sem_fea": sem_fea, "coors": coors}
+
         losses = dict()
 
-        loss_geo = self.sc_head.loss(y, batch_data_samples)
-        loss_decode = self._decode_head_forward_train(x, batch_data_samples)
+        loss_sc = self.sc_head.loss(y, batch_data_samples)
+        loss_range = self.decode_head.loss(x, batch_data_samples, self.train_cfg)
+        loss_ssc = self.ssc_head.loss(sem_dict, batch_data_samples, self.train_cfg)
 
-        losses.update(loss_geo)
-        losses.update(loss_decode)
+        losses.update(add_prefix(loss_sc, "sc"))
+        losses.update(add_prefix(loss_range, "range"))
+        losses.update(add_prefix(loss_ssc, "ssc"))
 
         if self.with_auxiliary_head:
             loss_aux = self._auxiliary_head_forward_train(x, batch_data_samples)
@@ -141,12 +162,15 @@ class RangeImageSegmentor(EncoderDecoder3D):
         x = self.extract_feat(imgs)
         y = self.extract_bev_feat(vxoels)
 
-        sem_labels = self.decode_head.predict(x, batch_input_metas, self.test_cfg)
-        geo_labels = self.sc_head.predict(y)
+        geo_pred = self.sc_head.predict(y)
+        sem_fea, coors = self.neck(y, geo_pred, x)
+        sem_fea = self.sparse_backbone(sem_fea, coors)
 
-        return self.postprocess_result(sem_labels, geo_labels, batch_data_samples)
+        ssc_labels = self.ssc_head.predict(sem_fea, batch_data_samples).argmax(dim=1)
 
-    def postprocess_result(self, sem_labels: List[Tensor], geo_labels: Tensor, batch_data_samples: SampleList) -> SampleList:
+        return self.postprocess_result(ssc_labels, coors, batch_data_samples)
+
+    def postprocess_result(self, ssc_labels: List[Tensor], coors: Tensor, batch_data_samples: SampleList) -> SampleList:
         """Convert results list to `Det3DDataSample`.
 
         Args:
@@ -165,65 +189,16 @@ class RangeImageSegmentor(EncoderDecoder3D):
             - ``pts_seg_logits`` (PointData): Predicted logits of 3D semantic
               segmentation before normalization.
         """
-        # proj_sem_label = sem_labels[0].cpu().numpy()
-        # label_show = np.full((64, 512, 3), 0, dtype=np.uint8)
-        # for i in range(20):
-        #     label_show[proj_sem_label == i] = palette[i]
+        ssc_true = np.stack([data_sample.metainfo["voxel_label"] for data_sample in batch_data_samples], axis=0)
+        B, H, W, D = ssc_true.shape
+        ssc_pred = torch.zeros((B, H, W, D), dtype=torch.int64, device=coors.device)
+        ssc_pred[coors[:, 3], coors[:, 0], coors[:, 1], coors[:, 2]] = ssc_labels
 
-        # point = torch.tensor([[10, 0, 0], [20, 0, 0]], device=geo_labels.device, dtype=torch.float32)
-
-        voxel_size = torch.tensor(self.voxel_size, device=geo_labels.device)
-        pc_lowest = torch.tensor(self.pc_range[:3], device=geo_labels.device)
-        geo_labels[:, 0, 0, 0] = 0
-        indices_grid = torch.nonzero(geo_labels)
-        indices_3d = indices_grid[:, 1:] * voxel_size + pc_lowest
-
-        indices_2d = self.transform_3d2d(indices_3d, H=64, W=512, fov_down=-25.0, fov_up=3.0)
-        geo_labels[indices_grid[:, 0], indices_grid[:, 1], indices_grid[:, 2], indices_grid[:, 3]] = sem_labels[
-            indices_grid[:, 0], indices_2d[:, 0], indices_2d[:, 1]
-        ]
-
-        sc_true = np.stack([data_sample.metainfo["voxel_label"] for data_sample in batch_data_samples], axis=0)
-        sc_pred = geo_labels.cpu().numpy()
+        ssc_pred = ssc_pred.cpu().numpy()
         for i, batch_data in enumerate(batch_data_samples):
-            batch_data.set_data({"y_pred": sc_pred[i]})
-            batch_data.set_data({"y_true": sc_true[i]})
+            batch_data.set_data({"y_pred": ssc_pred[i]})
+            batch_data.set_data({"y_true": ssc_true[i]})
         return batch_data_samples
-
-    def transform_3d2d(self, points: Tensor, H=64, W=512, fov_down=-25.0, fov_up=3.0):
-        fov_down_pi = fov_down / 180.0 * np.pi
-        fov_up_pi = fov_up / 180.0 * np.pi
-        fov_pi = abs(fov_down_pi) + abs(fov_up_pi)
-
-        W = torch.tensor(W, device=points.device)
-        H = torch.tensor(H, device=points.device)
-        zero = torch.tensor(0, device=points.device)
-
-        # get depth of all points
-        depth = torch.norm(points[:, :3], 2, dim=1)
-
-        # get angles of all points
-        yaw = -torch.arctan2(points[:, 1], points[:, 0])
-        pitch = torch.arcsin(points[:, 2] / (depth + 1e-6))
-
-        # get projection in image coords
-        proj_x = 0.5 * (yaw / torch.pi + 1.0)
-        proj_y = 1.0 - (pitch + abs(fov_down_pi)) / fov_pi
-
-        # scale to image size using angular resolution
-        proj_x *= W
-        proj_y *= H
-
-        # round and clamp for use as index
-        proj_x = torch.floor(proj_x)
-        proj_x = torch.minimum(W - 1, proj_x)
-        proj_x = torch.maximum(zero, proj_x).to(torch.int64)
-
-        proj_y = torch.floor(proj_y)
-        proj_y = torch.minimum(H - 1, proj_y)
-        proj_y = torch.maximum(zero, proj_y).to(torch.int64)
-
-        return torch.stack([proj_y, proj_x], dim=1)
 
     def _forward(self, batch_inputs_dict: dict, batch_data_samples: OptSampleList = None) -> Tensor:
         """Network forward process.
