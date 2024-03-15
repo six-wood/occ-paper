@@ -28,7 +28,7 @@ model.update(
         bev_backbone=dict(
             init_cfg=dict(
                 type="Pretrained",
-                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_16.pth",
+                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_18.pth",
                 prefix="bev_backbone",
             ),
         ),
@@ -42,7 +42,7 @@ model.update(
         sc_head=dict(
             init_cfg=dict(
                 type="Pretrained",
-                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_16.pth",
+                checkpoint="/home/lms/code/occ-paper/work_dirs/sc/epoch_18.pth",
                 prefix="sc_head",
             ),
         ),
@@ -67,8 +67,8 @@ optim_wrapper.update(
 model_wrapper_cfg = dict(type="MMDistributedDataParallel", detect_anomalous_params=True)
 
 # debug
-# train_dataloader.update(dataset=dict(indices=1))
-# train_dataloader.update(batch_size=1)
+# train_dataloader.update(dataset=dict(indices=2))
+# train_dataloader.update(batch_size=2)
 
-# val_dataloader.update(batch_size=1)
-# val_dataloader.update(dataset=dict(indices=1))
+# val_dataloader.update(batch_size=2)
+# val_dataloader.update(dataset=dict(indices=2))

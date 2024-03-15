@@ -72,7 +72,7 @@ model = dict(
         decoder_channels=[256, 128, 96, 96],
         decoder_blocks=[2, 2, 2, 2],
         block_type="basic",
-        sparseconv_backend="torchsparse",
+        sparseconv_backend="spconv",
     ),
     sc_head=dict(
         type=ScHead,
@@ -91,7 +91,6 @@ model = dict(
         dropout_ratio=0,
         loss_ce=dict(
             type=CrossEntropyLoss,
-            use_sigmoid=False,
             class_weight=None,
             loss_weight=1.0,
             avg_non_ignore=True,

@@ -106,15 +106,15 @@ class RangeImageSegmentor(EncoderDecoder3D):
 
         geo_pred = self.sc_head.predict(y)
         sem_fea, coors = self.neck(y, geo_pred, x)
-        sem_fea = self.sparse_backbone(sem_fea, coors)
+        sparse_fea = self.sparse_backbone(sem_fea, coors)
 
-        sem_dict = {"sem_fea": sem_fea, "coors": coors}
+        sparse_dict = {"sem_fea": sparse_fea, "coors": coors}
 
         losses = dict()
 
         loss_sc = self.sc_head.loss(y, batch_data_samples)
         loss_range = self.decode_head.loss(x, batch_data_samples, self.train_cfg)
-        loss_ssc = self.ssc_head.loss(sem_dict, batch_data_samples, self.train_cfg)
+        loss_ssc = self.ssc_head.loss(sparse_dict, batch_data_samples, self.train_cfg)
 
         losses.update(add_prefix(loss_sc, "sc"))
         losses.update(add_prefix(loss_range, "range"))
@@ -123,6 +123,7 @@ class RangeImageSegmentor(EncoderDecoder3D):
         if self.with_auxiliary_head:
             loss_aux = self._auxiliary_head_forward_train(x, batch_data_samples)
             losses.update(loss_aux)
+
         return losses
 
     def predict(self, batch_inputs_dict: dict, batch_data_samples: SampleList, rescale: bool = True) -> SampleList:
@@ -174,11 +175,7 @@ class RangeImageSegmentor(EncoderDecoder3D):
         """Convert results list to `Det3DDataSample`.
 
         Args:
-            seg_labels_list (List[Tensor]): List of segmentation results,
-                seg_logits from model of each input point clouds sample.
-            batch_data_samples (List[:obj:`Det3DDataSample`]): The det3d data
-                samples. It usually includes information such as `metainfo` and
-                `gt_pts_seg`.
+            coors: b z y x
 
         Returns:
             List[:obj:`Det3DDataSample`]: Segmentation results of the input
@@ -192,7 +189,7 @@ class RangeImageSegmentor(EncoderDecoder3D):
         ssc_true = np.stack([data_sample.metainfo["voxel_label"] for data_sample in batch_data_samples], axis=0)
         B, H, W, D = ssc_true.shape
         ssc_pred = torch.zeros((B, H, W, D), dtype=torch.int64, device=coors.device)
-        ssc_pred[coors[:, 3], coors[:, 0], coors[:, 1], coors[:, 2]] = ssc_labels
+        ssc_pred[coors[:, 0], coors[:, 3], coors[:, 2], coors[:, 1]] = ssc_labels
 
         ssc_pred = ssc_pred.cpu().numpy()
         for i, batch_data in enumerate(batch_data_samples):

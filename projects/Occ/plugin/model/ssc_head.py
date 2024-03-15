@@ -80,27 +80,21 @@ class SscHead(BaseModule):
         """Compute semantic segmentation loss.
 
         Args:
-            seg_logit (Tensor): Predicted  logits.
-            batch_data_samples (List[:obj:`Det3DDataSample`]): The seg
-                data samples. It usually includes information such
-                as `metainfo` and `gt_pts_seg`.
-
+            coors: b z y x
         Returns:
             Dict[str, Tensor]: A dictionary of loss components.
         """
         N, C = seg_logit.shape
         ssc_true = self._stack_batch_gt(batch_data_samples).to(seg_logit.device)
-
-        ssc_pred = torch.zeros_like(ssc_true, dtype=torch.float32).unsqueeze(1).expand(-1, C, -1, -1, -1).clone()
-        ssc_pred[:, 0, :, :, :] = 10.0
-        ssc_pred_ = ssc_pred.clone()
-        ssc_pred_[coors[:, 3], :, coors[:, 0], coors[:, 1], coors[:, 2]] = seg_logit
+        B, H, W, D = ssc_true.shape
+        ssc_pred = torch.zeros((B, C, H, W, D), dtype=torch.float32, device=seg_logit.device, requires_grad=True)
+        ssc_pred = ssc_pred.index_fill(1, torch.tensor([0], device=ssc_pred.device), 10.0)
+        ssc_pred[coors[:, 0], :, coors[:, 3], coors[:, 2], coors[:, 1]] = seg_logit
 
         loss = dict()
-        ssc_pred_ = ssc_pred.permute(0, 2, 3, 4, 1).reshape(-1, C).contiguous()
-        ssc_true_ = ssc_true.reshape(-1).contiguous()
-        loss["loss_ce"] = self.loss_ce(ssc_pred_, ssc_true_, ignore_index=self.ignore_index)
-        loss["loss_lovasz"] = self.loss_lovasz(ssc_pred_, ssc_true_, ignore_index=self.ignore_index)
+
+        loss["loss_ce"] = self.loss_ce(ssc_pred, ssc_true, ignore_index=self.ignore_index)
+        loss["loss_lovasz"] = self.loss_lovasz(ssc_pred, ssc_true, ignore_index=self.ignore_index)
         return loss
 
     def loss(self, inputs: dict, batch_data_samples: SampleList, train_cfg: ConfigType) -> Dict[str, Tensor]:
@@ -137,7 +131,7 @@ class SscHead(BaseModule):
 
         return seg_logits
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, sem_fea: Tensor) -> Tensor:
         """Forward function.
 
         Args:
@@ -147,4 +141,5 @@ class SscHead(BaseModule):
             Tensor: Segmentation map of shape [N, C].
                 Note that output contains all points from each batch.
         """
-        return self.cls_seg(x)
+        sem_logits = self.cls_seg(sem_fea)
+        return sem_logits

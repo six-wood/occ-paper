@@ -70,22 +70,30 @@ class FusionNet(BaseModule):
 
         return torch.stack([proj_y, proj_x], dim=1)
 
-    def forward(self, geo_fea: Tensor, geo_pred: Tensor, range_fea: Tensor):
+    def forward(self, geo_fea: Tensor, geo_pred: Tensor, range_feas: Tensor):
         voxel_size = self.voxel_size.to(geo_fea.device)
         pc_lowest = self.pc_range[:3].to(geo_fea.device)
+        range_fea = range_feas[self.indices]
+        B, C, H, W = range_fea.shape
 
         indices_grid = torch.nonzero(geo_pred)
         indices_3d = indices_grid[:, 1:] * voxel_size + pc_lowest
-
         indices_2d = self.transform_3d2d(indices_3d)
-        sem_fea = range_fea[self.indices][indices_grid[:, 0], :, indices_2d[:, 0], indices_2d[:, 1]]
+        
+        batch_idx = indices_grid[:, 0]
+        h_idx = indices_2d[:, 0]
+        w_idx = indices_2d[:, 1]
+        range_fea_ = range_fea.permute(0, 2, 3, 1).contiguous().view(-1, range_fea.shape[1])
+        indices_2d_ = batch_idx * H * W + h_idx * W + w_idx
+        sem_fea = torch.index_select(range_fea_, 0, indices_2d_)
 
         # geo_fea_smaple = geo_fea.permute(0, 2, 3, 1).contiguous()[indices_grid[:, 0], indices_grid[:, 1], indices_grid[:, 2], indices_grid[:, 3]]
         # weight = self.weight_conv(geo_fea_smaple)
         # sem_fea = weight * sem_fea + geo_fea_smaple
 
+        # swap x and z
         indices_grid_copy = indices_grid.clone()
-        indices_grid[:, 0:3] = indices_grid_copy[:, 1:4]
-        indices_grid[:, 3] = indices_grid_copy[:, 0]
+        indices_grid[:, 1] = indices_grid_copy[:, 3]
+        indices_grid[:, 3] = indices_grid_copy[:, 1]
 
         return sem_fea, indices_grid.to(torch.int)
