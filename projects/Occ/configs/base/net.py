@@ -51,7 +51,7 @@ model = dict(
     ),
     sparse_backbone=dict(
         type=SparseBackbone,
-        in_channels=128,
+        in_channels=3,
         num_stages=4,
         base_channels=32,
         encoder_channels=[32, 64, 128, 256],
