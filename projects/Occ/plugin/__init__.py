@@ -1,4 +1,4 @@
-from .model.range_image_segmentor import RangeImageSegmentor
+from .model.range_image_segmentor import SscNet
 from .model.range_image_head import RangeImageHead
 from .model.sc_head import ScHead
 from .model.boundary_loss import BoundaryLoss
@@ -10,7 +10,7 @@ from .evaluation.ssc_metric import SscMetric
 
 
 __all__ = [
-    "RangeImageSegmentor",
+    "SscNet",
     "RangeImageHead",
     "ScHead",
     "BoundaryLoss",

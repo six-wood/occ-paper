@@ -4,7 +4,7 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from mmdet3d.models import EncoderDecoder3D
+from mmdet3d.models import MVXTwoStageDetector
 from mmdet3d.registry import MODELS
 from mmdet3d.structures import PointData
 from mmdet3d.structures.det3d_data_sample import OptSampleList, SampleList
@@ -13,31 +13,20 @@ from mmdet3d.models.utils import add_prefix
 
 
 @MODELS.register_module()
-class RangeImageSegmentor(EncoderDecoder3D):
+class SscNet(MVXTwoStageDetector):
     def __init__(
         self,
-        backbone: ConfigType = None,
         bev_backbone: ConfigType = None,
-        decode_head: ConfigType = None,
         sc_head: ConfigType = None,
         neck: OptConfigType = None,
         sparse_backbone: OptConfigType = None,
         ssc_head: OptConfigType = None,
-        auxiliary_head: OptMultiConfig = None,
-        loss_regularization: OptMultiConfig = None,
         train_cfg: OptConfigType = None,
         test_cfg: OptConfigType = None,
         data_preprocessor: OptConfigType = None,
         init_cfg: OptMultiConfig = None,
     ) -> None:
-        super(RangeImageSegmentor, self).__init__(
-            backbone=backbone,
-            decode_head=decode_head,
-            neck=neck,
-            auxiliary_head=auxiliary_head,
-            loss_regularization=loss_regularization,
-            train_cfg=train_cfg,
-            test_cfg=test_cfg,
+        super(SscNet, self).__init__(
             data_preprocessor=data_preprocessor,
             init_cfg=init_cfg,
         )
@@ -46,19 +35,22 @@ class RangeImageSegmentor(EncoderDecoder3D):
             self.bev_backbone = MODELS.build(bev_backbone)
         if sc_head is not None:
             self.sc_head = MODELS.build(sc_head)
+        
+        if neck is not None:
+            self.neck = MODELS.build(neck)    
+        
         if sparse_backbone is not None:
             self.sparse_backbone = MODELS.build(sparse_backbone)
         if ssc_head is not None:
             self.ssc_head = MODELS.build(ssc_head)
 
+        self.train_cfg = train_cfg
+        self.test_cfg = test_cfg
+
         self.grid_shape = self.data_preprocessor.voxel_layer.grid_shape
         self.pc_range = self.data_preprocessor.voxel_layer.point_cloud_range
         self.voxel_size = self.data_preprocessor.voxel_layer.voxel_size
 
-    def extract_feat(self, batch_inputs: Tensor) -> dict:
-        """Extract features from points."""
-        x = self.backbone(batch_inputs)
-        return x
 
     def extract_bev_feat(self, voxels: Tensor) -> Tensor:
         """Extract features from BEV images.
@@ -98,14 +90,12 @@ class RangeImageSegmentor(EncoderDecoder3D):
             Dict[str, Tensor]: A dictionary of loss components.
         """
         # extract features using backbone
-        imgs = batch_inputs_dict["imgs"]
         vxoels = batch_inputs_dict["voxels"]
 
-        x = self.extract_feat(imgs)
         y = self.extract_bev_feat(vxoels)
 
         geo_pred = self.sc_head.predict(y).argmax(dim=1)
-        sem_fea, coors = self.neck(y, geo_pred, x)
+        sem_fea, coors = self.neck(y, geo_pred)
         sparse_fea = self.sparse_backbone(sem_fea, coors)
 
         sparse_dict = {"sem_fea": sparse_fea, "coors": coors}
@@ -113,16 +103,10 @@ class RangeImageSegmentor(EncoderDecoder3D):
         losses = dict()
 
         loss_sc = self.sc_head.loss(y, batch_data_samples)
-        loss_range = self.decode_head.loss(x, batch_data_samples, self.train_cfg)
         loss_ssc = self.ssc_head.loss(sparse_dict, batch_data_samples, self.train_cfg)
 
         losses.update(add_prefix(loss_sc, "sc"))
-        losses.update(add_prefix(loss_range, "range"))
         losses.update(add_prefix(loss_ssc, "ssc"))
-
-        if self.with_auxiliary_head:
-            loss_aux = self._auxiliary_head_forward_train(x, batch_data_samples)
-            losses.update(loss_aux)
 
         # torch.cuda.empty_cache()
         # print(torch.cuda.memory_allocated() / 1024 / 1024 / 1024, "GB")
@@ -160,13 +144,11 @@ class RangeImageSegmentor(EncoderDecoder3D):
         for data_sample in batch_data_samples:
             batch_input_metas.append(data_sample.metainfo)
 
-        imgs = batch_inputs_dict["imgs"]
         vxoels = batch_inputs_dict["voxels"]
-        x = self.extract_feat(imgs)
         y = self.extract_bev_feat(vxoels)
 
         geo_pred = self.sc_head.predict(y).argmax(dim=1)
-        sem_fea, coors = self.neck(y, geo_pred, x)
+        sem_fea, coors = self.neck(y, geo_pred)
         sem_fea = self.sparse_backbone(sem_fea, coors)
 
         ssc_labels = self.ssc_head.predict(sem_fea, batch_data_samples).argmax(dim=1)

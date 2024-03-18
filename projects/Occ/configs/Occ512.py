@@ -20,13 +20,6 @@ default_hooks.update(
 
 model.update(
     dict(
-        # backbone=dict(
-        #     init_cfg=dict(
-        #         type="Pretrained",
-        #         checkpoint="/home/lms/code/occ-paper/work_dirs/cenet/epoch_45.pth",
-        #         prefix="backbone",
-        #     ),
-        # ),
         bev_backbone=dict(
             init_cfg=dict(
                 type="Pretrained",
@@ -34,13 +27,6 @@ model.update(
                 prefix="bev_backbone",
             ),
         ),
-        # decode_head=dict(
-        #     init_cfg=dict(
-        #         type="Pretrained",
-        #         checkpoint="/home/lms/code/occ-paper/work_dirs/cenet/epoch_45.pth",
-        #         prefix="decode_head",
-        #     ),
-        # ),
         sc_head=dict(
             init_cfg=dict(
                 type="Pretrained",
