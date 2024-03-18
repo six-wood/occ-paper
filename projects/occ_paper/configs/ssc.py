@@ -32,8 +32,8 @@ visualizer = dict(type=OccLocalVisualizer, vis_backends=vis_backends, name="visu
 
 custom_imports = dict(imports=["projects.occ_paper.mmdet3d_plugin"], allow_failed_imports=False)
 
-train_dataloader.update(dataset=dict(indices=5))
-train_dataloader.update(batch_size=2)
+# train_dataloader.update(dataset=dict(indices=5))
+# train_dataloader.update(batch_size=2)
 
-val_dataloader.update(batch_size=2)
+# val_dataloader.update(batch_size=2)
 # val_dataloader.update(dataset=dict(indices=5))
