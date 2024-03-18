@@ -84,17 +84,17 @@ class SscHead(BaseModule):
         Returns:
             Dict[str, Tensor]: A dictionary of loss components.
         """
-        N, C = seg_logit.shape
-        ssc_true = self._stack_batch_gt(batch_data_samples).to(seg_logit.device)
-        B, H, W, D = ssc_true.shape
-        ssc_pred = torch.zeros((B, C, H, W, D), dtype=torch.float32, device=seg_logit.device, requires_grad=True)
-        ssc_pred = ssc_pred.index_fill(1, torch.tensor([0], device=ssc_pred.device), 10.0)
-        ssc_pred[coors[:, 0], :, coors[:, 3], coors[:, 2], coors[:, 1]] = seg_logit
+        ssc_true = self._stack_batch_gt(batch_data_samples).to(seg_logit.device)[
+            coors[:, 0],
+            coors[:, 3],
+            coors[:, 2],
+            coors[:, 1],
+        ]
 
         loss = dict()
 
-        loss["loss_ce"] = self.loss_ce(ssc_pred, ssc_true, ignore_index=self.ignore_index)
-        loss["loss_lovasz"] = self.loss_lovasz(ssc_pred, ssc_true, ignore_index=self.ignore_index)
+        loss["loss_ce"] = self.loss_ce(seg_logit, ssc_true, ignore_index=self.ignore_index)
+        loss["loss_lovasz"] = self.loss_lovasz(seg_logit, ssc_true, ignore_index=self.ignore_index)
         return loss
 
     def loss(self, inputs: dict, batch_data_samples: SampleList, train_cfg: ConfigType) -> Dict[str, Tensor]:

@@ -109,5 +109,5 @@ class ScHead(BaseModule):
             List[Tensor]: The segmentation prediction mask of each batch.
         """
 
-        geo_logits = self.forward(geo_fea[:, None, :, :, :]).permute(0, 1, 3, 4, 2).argmax(dim=1)
+        geo_logits = self.forward(geo_fea[:, None, :, :, :]).permute(0, 1, 3, 4, 2)
         return geo_logits

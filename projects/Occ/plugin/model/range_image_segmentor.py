@@ -104,7 +104,7 @@ class RangeImageSegmentor(EncoderDecoder3D):
         x = self.extract_feat(imgs)
         y = self.extract_bev_feat(vxoels)
 
-        geo_pred = self.sc_head.predict(y)
+        geo_pred = self.sc_head.predict(y).argmax(dim=1)
         sem_fea, coors = self.neck(y, geo_pred, x)
         sparse_fea = self.sparse_backbone(sem_fea, coors)
 
@@ -124,6 +124,8 @@ class RangeImageSegmentor(EncoderDecoder3D):
             loss_aux = self._auxiliary_head_forward_train(x, batch_data_samples)
             losses.update(loss_aux)
 
+        # torch.cuda.empty_cache()
+        # print(torch.cuda.memory_allocated() / 1024 / 1024 / 1024, "GB")
         return losses
 
     def predict(self, batch_inputs_dict: dict, batch_data_samples: SampleList, rescale: bool = True) -> SampleList:
@@ -163,7 +165,7 @@ class RangeImageSegmentor(EncoderDecoder3D):
         x = self.extract_feat(imgs)
         y = self.extract_bev_feat(vxoels)
 
-        geo_pred = self.sc_head.predict(y)
+        geo_pred = self.sc_head.predict(y).argmax(dim=1)
         sem_fea, coors = self.neck(y, geo_pred, x)
         sem_fea = self.sparse_backbone(sem_fea, coors)
 
