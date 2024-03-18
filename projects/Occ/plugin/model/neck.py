@@ -10,11 +10,29 @@ from mmdet3d.utils import ConfigType, OptConfigType
 from mmcv.cnn import ConvModule
 
 
+class PositionEmbeddingLearned(nn.Module):
+    """Absolute pos embedding, learned."""
+
+    def __init__(self, input_channel, num_pos_feats):
+        super().__init__()
+        self.position_embedding_head = nn.Sequential(
+            nn.Linear(input_channel, num_pos_feats),
+            nn.BatchNorm1d(num_pos_feats),
+            nn.ReLU(inplace=True),
+            nn.Linear(num_pos_feats, num_pos_feats),
+        )
+
+    def forward(self, xyz):
+        position_embedding = self.position_embedding_head(xyz)
+        return position_embedding
+
+
 @MODELS.register_module()
 class FusionNet(BaseModule):
     def __init__(
         self,
         indices: int = 0,
+        pose_embending_dim: int = 128,
         voxel_size: List = [0.2, 0.2, 0.2],
         pc_range: List = [0, -25.6, -2, 51.2, 25.6, 4.4],
         range_shape: List = [64, 512],
@@ -32,6 +50,8 @@ class FusionNet(BaseModule):
         self.range_shape = torch.tensor(range_shape)
         self.range_fov = torch.tensor(range_fov)
         self.indices = indices
+
+        self.pose_embending = PositionEmbeddingLearned(3, pose_embending_dim)
 
     def transform_3d2d(self, points: Tensor):
         H = self.range_shape[0].to(points.device)
@@ -79,13 +99,14 @@ class FusionNet(BaseModule):
         indices_grid = torch.nonzero(geo_pred)
         indices_3d = indices_grid[:, 1:] * voxel_size + pc_lowest
         indices_2d = self.transform_3d2d(indices_3d)
-        
+        pos_query = self.pose_embending(indices_3d)
+
         batch_idx = indices_grid[:, 0]
         h_idx = indices_2d[:, 0]
         w_idx = indices_2d[:, 1]
         range_fea_ = range_fea.permute(0, 2, 3, 1).contiguous().view(-1, range_fea.shape[1])
         indices_2d_ = batch_idx * H * W + h_idx * W + w_idx
-        sem_fea = torch.index_select(range_fea_, 0, indices_2d_)
+        sem_fea = torch.index_select(range_fea_, 0, indices_2d_) + pos_query
 
         # geo_fea_smaple = geo_fea.permute(0, 2, 3, 1).contiguous()[indices_grid[:, 0], indices_grid[:, 1], indices_grid[:, 2], indices_grid[:, 3]]
         # weight = self.weight_conv(geo_fea_smaple)

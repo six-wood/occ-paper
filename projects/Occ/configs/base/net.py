@@ -57,6 +57,7 @@ model = dict(
     neck=dict(
         type=FusionNet,
         indices=0,
+        pose_embending_dim=128,
         voxel_size=voxel_size,
         pc_range=point_cloud_range,
         range_shape=[64, 512],
