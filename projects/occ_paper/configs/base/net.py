@@ -4,7 +4,7 @@ from projects.occ_paper.mmdet3d_plugin.models.rangenet import RangeNet
 from projects.occ_paper.mmdet3d_plugin.models.fusionet import FusionNet
 from projects.occ_paper.mmdet3d_plugin.models.ssc_net import SscNet
 from projects.occ_paper.mmdet3d_plugin.models.head import DenseSscHead
-from projects.occ_paper.mmdet3d_plugin.models.data_preprocessor import SccDataPreprocessor
+from projects.occ_paper.mmdet3d_plugin.models.data_preprocessor import SccDataPreprocessor, Det3DDataPreprocessor
 from projects.occ_paper.mmdet3d_plugin.models.losses import OccLovaszLoss, BoundLoss
 from projects.occ_paper.mmdet3d_plugin.models.rangehead import RangeHead
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
@@ -27,7 +27,7 @@ model = dict(
     type=SscNet,
     use_pred_mask=True,
     data_preprocessor=dict(
-        type=SccDataPreprocessor,
+        type=Det3DDataPreprocessor,
         voxel=True,
         voxel_type="dynamic",
         voxel_layer=dict(
@@ -36,21 +36,6 @@ model = dict(
             voxel_size=voxel_size,
             max_voxels=(-1, -1),
         ),
-        range_img=True,
-        range_layer=dict(
-            H=64,
-            W=1024,
-            fov_up=3.0,
-            fov_down=-25.0,
-            fov_left=-180.0,
-            fov_right=180.0,
-            means=(11.71279, -0.1023471, 0.4952, -1.0545, 0.2877),
-            stds=(10.24, 12.295865, 9.4287, 0.8643, 0.1450),
-        ),
-        mean=[102.9801, 115.9465, 122.7717],
-        std=[1.0, 1.0, 1.0],
-        bgr_to_rgb=False,
-        pad_size_divisor=32,
     ),
     # img_backbone=dict(
     #     type=ResNet,
@@ -70,23 +55,6 @@ model = dict(
         act_cfg=HSwin,
         norm_cfg=syncNorm,
     ),
-    range_backbone=dict(
-        type=RangeNet,
-        in_channels=5,
-        stem_channels=128,
-        num_stages=4,
-        stage_blocks=(3, 4, 6, 3),
-        out_channels=(128, 128, 128, 128),
-        fuse_channels=(256, 128),
-        strides=(1, 2, 2, 2),
-        dilations=(1, 1, 1, 1),
-        act_cfg=dict(type=nn.Hardswish, inplace=True),
-        init_cfg=dict(
-            type="Pretrained",
-            checkpoint="/home/lms/code/occ-paper/work_dirs/cenet/epoch_25.pth",
-            prefix="backbone",
-        ),
-    ),
     fusion_neck=dict(
         type=FusionNet,
         top_k_scatter=k_scatter,
@@ -100,13 +68,13 @@ model = dict(
         num_classes=num_classes,
         sem_sparse_backbone=dict(
             type=MinkUNetBackbone,
-            in_channels=128,
-            num_stages=2,
-            base_channels=128,
-            encoder_channels=[128, 256],
-            encoder_blocks=[2, 2],
-            decoder_channels=[256, 128],
-            decoder_blocks=[2, 2],
+            in_channels=3,
+            num_stages=4,
+            base_channels=32,
+            encoder_channels=[32, 64, 128, 256],
+            encoder_blocks=[2, 2, 2, 2],
+            decoder_channels=[96, 96, 256, 128],
+            decoder_blocks=[2, 2, 2, 2],
             block_type="basic",
             sparseconv_backend="spconv",
         ),
