@@ -74,19 +74,18 @@ model = dict(
     ssc_head=dict(
         type=SscHead,
         channels=96,
-        num_classes=20,
+        num_classes=19,
         dropout_ratio=0,
         ignore_index=ignore_index,
         loss_ce=dict(
             type=CrossEntropyLoss,
-            class_weight=semantickitti_class_weight,
+            class_weight=class_weight,
             loss_weight=1.0,
             avg_non_ignore=True,
         ),
         loss_lovasz=dict(
             type=LovaszLoss,
-            classes=class_index,  # ignore the first class
-            class_weight=semantickitti_class_weight,
+            class_weight=class_weight,
             reduction="none",
             loss_weight=1.0,
         ),

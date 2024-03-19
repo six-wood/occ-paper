@@ -35,10 +35,10 @@ class SscNet(MVXTwoStageDetector):
             self.bev_backbone = MODELS.build(bev_backbone)
         if sc_head is not None:
             self.sc_head = MODELS.build(sc_head)
-        
+
         if neck is not None:
-            self.neck = MODELS.build(neck)    
-        
+            self.neck = MODELS.build(neck)
+
         if sparse_backbone is not None:
             self.sparse_backbone = MODELS.build(sparse_backbone)
         if ssc_head is not None:
@@ -50,7 +50,6 @@ class SscNet(MVXTwoStageDetector):
         self.grid_shape = self.data_preprocessor.voxel_layer.grid_shape
         self.pc_range = self.data_preprocessor.voxel_layer.point_cloud_range
         self.voxel_size = self.data_preprocessor.voxel_layer.voxel_size
-
 
     def extract_bev_feat(self, voxels: Tensor) -> Tensor:
         """Extract features from BEV images.
@@ -173,7 +172,7 @@ class SscNet(MVXTwoStageDetector):
         ssc_true = np.stack([data_sample.metainfo["voxel_label"] for data_sample in batch_data_samples], axis=0)
         B, H, W, D = ssc_true.shape
         ssc_pred = torch.zeros((B, H, W, D), dtype=torch.int64, device=coors.device)
-        ssc_pred[coors[:, 0], coors[:, 3], coors[:, 2], coors[:, 1]] = ssc_labels
+        ssc_pred[coors[:, 0], coors[:, 3], coors[:, 2], coors[:, 1]] = ssc_labels + 1
 
         ssc_pred = ssc_pred.cpu().numpy()
         for i, batch_data in enumerate(batch_data_samples):

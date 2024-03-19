@@ -90,6 +90,8 @@ class SscHead(BaseModule):
             coors[:, 2],
             coors[:, 1],
         ]
+        ssc_true[ssc_true == 0] = self.ignore_index
+        ssc_true[ssc_true != self.ignore_index] = ssc_true[ssc_true != self.ignore_index] - 1
 
         loss = dict()
 

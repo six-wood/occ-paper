@@ -23,7 +23,7 @@ model = dict(
     ),
     backbone=dict(
         type=MinkUNetBackbone,
-        in_channels=4,
+        in_channels=3,
         num_stages=4,
         base_channels=32,
         encoder_channels=[32, 64, 128, 256],
@@ -48,9 +48,6 @@ model = dict(
 
 from mmengine.dataset.sampler import DefaultSampler
 from mmdet3d.datasets.transforms import (
-    LoadPointsFromFile,
-    LoadAnnotations3D,
-    PointSegClassMapping,
     PointSample,
     RandomFlip3D,
     GlobalRotScaleTrans,
@@ -60,6 +57,7 @@ from mmdet3d.datasets.transforms import (
 from mmdet3d.datasets.utils import Pack3DDetInputs
 from mmdet3d.evaluation.metrics import SegMetric
 from projects.minkunet.minkunet.semantickitti_dataset import SemanticKittiSC as dataset_type
+from projects.minkunet.minkunet.loading import LoadAnnotationsOcc, LoadPointsFromFileOcc
 
 
 data_root = "data/semantickitti/"
@@ -154,18 +152,8 @@ input_modality = dict(use_lidar=True, use_camera=True)
 backend_args = None
 
 train_pipeline = [
-    dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
-    dict(
-        type=LoadAnnotations3D,
-        with_bbox_3d=False,
-        with_label_3d=False,
-        with_seg_3d=True,
-        seg_3d_dtype="np.int32",
-        seg_offset=2**16,
-        dataset_type="semantickitti",
-        backend_args=backend_args,
-    ),
-    dict(type=PointSegClassMapping),
+    dict(type=LoadPointsFromFileOcc),
+    dict(type=LoadAnnotationsOcc),
     dict(
         type="RandomChoice",
         transforms=[
@@ -175,17 +163,8 @@ train_pipeline = [
                     num_areas=[3, 4, 5, 6],
                     pitch_angles=[-25, 3],
                     pre_transform=[
-                        dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4),
-                        dict(
-                            type=LoadAnnotations3D,
-                            with_bbox_3d=False,
-                            with_label_3d=False,
-                            with_seg_3d=True,
-                            seg_3d_dtype="np.int32",
-                            seg_offset=2**16,
-                            dataset_type="semantickitti",
-                        ),
-                        dict(type=PointSegClassMapping),
+                        dict(type=LoadPointsFromFileOcc),
+                        dict(type=LoadAnnotationsOcc),
                     ],
                     prob=1,
                 )
@@ -197,17 +176,8 @@ train_pipeline = [
                     swap_ratio=0.5,
                     rotate_paste_ratio=1.0,
                     pre_transform=[
-                        dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4),
-                        dict(
-                            type=LoadAnnotations3D,
-                            with_bbox_3d=False,
-                            with_label_3d=False,
-                            with_seg_3d=True,
-                            seg_3d_dtype="np.int32",
-                            seg_offset=2**16,
-                            dataset_type="semantickitti",
-                        ),
-                        dict(type=PointSegClassMapping),
+                        dict(type=LoadPointsFromFileOcc),
+                        dict(type=LoadAnnotationsOcc),
                     ],
                     prob=1,
                 )
@@ -231,18 +201,8 @@ train_pipeline = [
     dict(type=Pack3DDetInputs, keys=["points", "pts_semantic_mask"]),
 ]
 test_pipeline = [
-    dict(type=LoadPointsFromFile, coord_type="LIDAR", load_dim=4, use_dim=4, backend_args=backend_args),
-    dict(
-        type=LoadAnnotations3D,
-        with_bbox_3d=False,
-        with_label_3d=False,
-        with_seg_3d=True,
-        seg_3d_dtype="np.int32",
-        seg_offset=2**16,
-        dataset_type="semantickitti",
-        backend_args=backend_args,
-    ),
-    dict(type=PointSegClassMapping),
+    dict(type=LoadPointsFromFileOcc),
+    dict(type=LoadAnnotationsOcc),
     dict(type=Pack3DDetInputs, keys=["points", "pts_semantic_mask"]),
 ]
 
