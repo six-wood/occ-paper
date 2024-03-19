@@ -15,7 +15,7 @@ from mmdet3d.structures.det3d_data_sample import SampleList
 from mmcv.cnn import ConvModule
 
 
-class SegmentorHead(nn.Module):
+class SegmentationHead(nn.Module):
     """
     3D Segmentation heads to retrieve semantic segmentation at each scale.
     Formed by Dim expansion, Conv3D, ASPP block, Conv3D.
@@ -38,9 +38,9 @@ class SegmentorHead(nn.Module):
         # Convolution for output
         self.conv_classes = nn.Conv3d(planes, nbr_classes, kernel_size=3, padding=1, stride=1)
 
-    def forward(self, x_in: torch.Tensor) -> torch.Tensor:
+    def forward(self, x_in):
         # Dimension exapension
-        # x_in = x_in[:, None, :, :, :]
+        x_in = x_in[:, None, :, :, :]
 
         # Convolution to go from inplanes to planes features...
         x_in = self.relu(self.conv0(x_in))
@@ -56,7 +56,7 @@ class SegmentorHead(nn.Module):
 
 
 @MODELS.register_module()
-class ScHead(BaseModule):
+class SscHead(BaseModule):
     """
     3D Segmentation heads to retrieve semantic segmentation at each scale.
     Formed by Dim expansion, Conv3D, ASPP block, Conv3D.
@@ -75,14 +75,14 @@ class ScHead(BaseModule):
         ignore_index: int = 255,
         free_index: int = 0,
     ):
-        super(ScHead, self).__init__(init_cfg=init_cfg)
+        super(SscHead, self).__init__(init_cfg=init_cfg)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.act_cfg = act_cfg
         self.ignore_index = ignore_index
         self.free_index = free_index
 
-        self.sc_class = SegmentorHead(
+        self.sc_class = SegmentationHead(
             inplanes=1,
             planes=8,
             nbr_classes=20,
@@ -136,7 +136,7 @@ class ScHead(BaseModule):
         Returns:
             Dict[str, Tensor]: A dictionary of loss components.
         """
-        geo_logits = self.forward(geo_fea[:, None, :, :, :]).permute(0, 1, 3, 4, 2)
+        geo_logits = self.forward(geo_fea).permute(0, 1, 3, 4, 2)
 
         losses = self.loss_by_feat(geo_logits, batch_data_samples)
         return losses

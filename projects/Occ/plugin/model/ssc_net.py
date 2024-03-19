@@ -18,9 +18,9 @@ class SscNet(MVXTwoStageDetector):
         self,
         bev_backbone: ConfigType = None,
         sc_head: ConfigType = None,
-        neck: OptConfigType = None,
-        sparse_backbone: OptConfigType = None,
-        ssc_head: OptConfigType = None,
+        # neck: OptConfigType = None,
+        # sparse_backbone: OptConfigType = None,
+        # ssc_head: OptConfigType = None,
         train_cfg: OptConfigType = None,
         test_cfg: OptConfigType = None,
         data_preprocessor: OptConfigType = None,
@@ -36,13 +36,13 @@ class SscNet(MVXTwoStageDetector):
         if sc_head is not None:
             self.sc_head = MODELS.build(sc_head)
 
-        if neck is not None:
-            self.neck = MODELS.build(neck)
+        # if neck is not None:
+        #     self.neck = MODELS.build(neck)
 
-        if sparse_backbone is not None:
-            self.sparse_backbone = MODELS.build(sparse_backbone)
-        if ssc_head is not None:
-            self.ssc_head = MODELS.build(ssc_head)
+        # if sparse_backbone is not None:
+        #     self.sparse_backbone = MODELS.build(sparse_backbone)
+        # if ssc_head is not None:
+        #     self.ssc_head = MODELS.build(ssc_head)
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
@@ -93,19 +93,19 @@ class SscNet(MVXTwoStageDetector):
 
         y = self.extract_bev_feat(vxoels)
 
-        geo_pred = self.sc_head.predict(y).argmax(dim=1)
-        sem_fea, coors = self.neck(y, geo_pred)
-        sparse_fea = self.sparse_backbone(sem_fea, coors)
+        # geo_pred = self.sc_head.predict(y).argmax(dim=1)
+        # sem_fea, coors = self.neck(y, geo_pred)
+        # sparse_fea = self.sparse_backbone(sem_fea, coors)
 
-        sparse_dict = {"sem_fea": sparse_fea, "coors": coors}
+        # sparse_dict = {"sem_fea": sparse_fea, "coors": coors}
 
         losses = dict()
 
         loss_sc = self.sc_head.loss(y, batch_data_samples)
-        loss_ssc = self.ssc_head.loss(sparse_dict, batch_data_samples, self.train_cfg)
+        # loss_ssc = self.ssc_head.loss(sparse_dict, batch_data_samples, self.train_cfg)
 
         losses.update(add_prefix(loss_sc, "sc"))
-        losses.update(add_prefix(loss_ssc, "ssc"))
+        # losses.update(add_prefix(loss_ssc, "ssc"))
 
         # torch.cuda.empty_cache()
         # print(torch.cuda.memory_allocated() / 1024 / 1024 / 1024, "GB")
@@ -147,14 +147,14 @@ class SscNet(MVXTwoStageDetector):
         y = self.extract_bev_feat(vxoels)
 
         geo_pred = self.sc_head.predict(y).argmax(dim=1)
-        sem_fea, coors = self.neck(y, geo_pred)
-        sem_fea = self.sparse_backbone(sem_fea, coors)
+        # sem_fea, coors = self.neck(y, geo_pred)
+        # sem_fea = self.sparse_backbone(sem_fea, coors)
 
-        ssc_labels = self.ssc_head.predict(sem_fea, batch_data_samples).argmax(dim=1)
+        # ssc_labels = self.ssc_head.predict(sem_fea, batch_data_samples).argmax(dim=1)
 
-        return self.postprocess_result(ssc_labels, coors, batch_data_samples)
+        return self.postprocess_result(geo_pred, batch_data_samples)
 
-    def postprocess_result(self, ssc_labels: List[Tensor], coors: Tensor, batch_data_samples: SampleList) -> SampleList:
+    def postprocess_result(self, ssc_labels: List[Tensor], batch_data_samples: SampleList) -> SampleList:
         """Convert results list to `Det3DDataSample`.
 
         Args:
@@ -171,10 +171,8 @@ class SscNet(MVXTwoStageDetector):
         """
         ssc_true = np.stack([data_sample.metainfo["voxel_label"] for data_sample in batch_data_samples], axis=0)
         B, H, W, D = ssc_true.shape
-        ssc_pred = torch.zeros((B, H, W, D), dtype=torch.int64, device=coors.device)
-        ssc_pred[coors[:, 0], coors[:, 3], coors[:, 2], coors[:, 1]] = ssc_labels + 1
+        ssc_pred = ssc_labels.cpu().numpy()
 
-        ssc_pred = ssc_pred.cpu().numpy()
         for i, batch_data in enumerate(batch_data_samples):
             batch_data.set_data({"y_pred": ssc_pred[i]})
             batch_data.set_data({"y_true": ssc_true[i]})

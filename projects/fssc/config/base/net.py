@@ -1,13 +1,10 @@
 import torch.nn as nn
-from projects.Occ.plugin.model.sc_head import ScHead
-from projects.Occ.plugin.model.ssc_net import SscNet
-from projects.Occ.plugin.model.bev_backbone import BevNet
-from projects.Occ.plugin.model.neck import FusionNet
+from projects.fssc.plugin.model.ssc_head import SscHead
+from projects.fssc.plugin.model.ssc_net import SscNet
+from projects.fssc.plugin.model.bev_backbone import BevNet
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
 from mmdet3d.models.data_preprocessors import Det3DDataPreprocessor
 from mmdet3d.models.losses import LovaszLoss
-from projects.Occ.plugin.model.sparse_backbone import SparseBackbone
-from projects.Occ.plugin.model.ssc_head import SscHead
 
 from mmengine.config import read_base
 
@@ -39,8 +36,8 @@ model = dict(
         bev_decoder_out_channels=(64, 48, 32),
         act_cfg=dict(type=nn.Hardswish, inplace=True),
     ),
-    sc_head=dict(
-        type=ScHead,
+    ssc_head=dict(
+        type=SscHead,
         loss_ce=dict(
             type=CrossEntropyLoss,
             class_weight=semantickitti_class_weight,

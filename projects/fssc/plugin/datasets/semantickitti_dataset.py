@@ -4,20 +4,11 @@
 # To view a copy of this license, visit
 # https://github.com/NVlabs/VoxFormer/blob/main/LICENSE
 
-import os
-import glob
-import copy
-import torch
-import random
-import mmcv
 import numpy as np
 from mmdet3d.datasets.semantickitti_dataset import SemanticKittiDataset
 from typing import Callable, List, Optional, Union
 from os import path as osp
-from PIL import Image
-from torchvision import transforms
 from mmdet3d.registry import DATASETS
-from mmengine.dataset.utils import BaseDataElement
 
 
 @DATASETS.register_module()
