@@ -75,14 +75,14 @@ class BevNet(BaseModule):
         bev_input_dimensions: int = 32,
         bev_stem_channels: int = 32,
         bev_num_stages: int = 3,
-        bev_stage_blocks: Sequence[int] = (1, 1, 1),
+        bev_stage_blocks: Sequence[int] = (4, 6, 3),
         bev_strides: Sequence[int] = (2, 2, 2),
         bev_dilations: Sequence[int] = (1, 1, 1),
         bev_encoder_out_channels: Sequence[int] = (48, 64, 80),
         bev_decoder_out_channels: Sequence[int] = (64, 48, 32),
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
-        act_cfg: ConfigType = dict(type="LeakyReLU"),
+        act_cfg: ConfigType = dict(type="ReLU", inplace=True),
         init_cfg: OptMultiConfig = None,
     ):
         super().__init__(init_cfg=init_cfg)

@@ -1,5 +1,7 @@
 import torch.nn as nn
 from projects.fssc.plugin.model.ssc_head import SscHead
+from projects.fssc.plugin.model.sc_head import ScHead
+from projects.fssc.plugin.model.neck import DownsampleNet
 from projects.fssc.plugin.model.ssc_net import SscNet
 from projects.fssc.plugin.model.bev_backbone import BevNet
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
@@ -34,7 +36,22 @@ model = dict(
         bev_dilations=(1, 1, 1),
         bev_encoder_out_channels=(48, 64, 80),
         bev_decoder_out_channels=(64, 48, 32),
-        act_cfg=dict(type=nn.Hardswish, inplace=True),
+    ),
+    sc_head=dict(
+        type=ScHead,
+        loss_ce=dict(
+            type=CrossEntropyLoss,
+            class_weight=geo_class_weight,
+            ignore_index=ignore_index,
+            loss_weight=1.0,
+            avg_non_ignore=True,
+        ),
+    ),
+    neck=dict(
+        type=DownsampleNet,
+        top_k_scatter=8,
+        voxel_size=voxel_size,
+        pc_range=point_cloud_range,
     ),
     ssc_head=dict(
         type=SscHead,
@@ -44,6 +61,12 @@ model = dict(
             ignore_index=ignore_index,
             loss_weight=1.0,
             avg_non_ignore=True,
+        ),
+        loss_lovasz=dict(
+            type=LovaszLoss,
+            class_weight=semantickitti_class_weight,
+            loss_weight=1.0,
+            reduction="none",
         ),
     ),
 )

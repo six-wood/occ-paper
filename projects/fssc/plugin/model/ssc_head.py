@@ -13,6 +13,10 @@ from mmdet3d.utils.typing_utils import ConfigType, OptMultiConfig
 from mmdet3d.structures.det3d_data_sample import SampleList
 
 from mmcv.cnn import ConvModule
+from spconv.pytorch import SparseConvTensor
+
+from mmdet3d.models.layers.sparse_block import replace_feature
+from mmcv.cnn import build_conv_layer, build_norm_layer
 
 
 class SegmentationHead(nn.Module):
@@ -25,34 +29,56 @@ class SegmentationHead(nn.Module):
         super().__init__()
 
         # First convolution
-        self.conv0 = nn.Conv3d(inplanes, planes, kernel_size=3, padding=1, stride=1)
+        self.conv0 = build_conv_layer(dict(type="SubMConv3d"), inplanes, planes, kernel_size=3, padding=1, stride=1)
 
         # ASPP Block
         self.conv_list = dilations_conv_list
-        self.conv1 = nn.ModuleList([nn.Conv3d(planes, planes, kernel_size=3, padding=dil, dilation=dil, bias=False) for dil in dilations_conv_list])
-        self.bn1 = nn.ModuleList([nn.BatchNorm3d(planes) for dil in dilations_conv_list])
-        self.conv2 = nn.ModuleList([nn.Conv3d(planes, planes, kernel_size=3, padding=dil, dilation=dil, bias=False) for dil in dilations_conv_list])
-        self.bn2 = nn.ModuleList([nn.BatchNorm3d(planes) for dil in dilations_conv_list])
+        self.conv1 = nn.ModuleList(
+            [
+                build_conv_layer(dict(type="SubMConv3d"), planes, planes, kernel_size=3, padding=dil, dilation=dil, bias=False)
+                for dil in dilations_conv_list
+            ]
+        )
+        self.bn1 = nn.ModuleList([build_norm_layer(dict(type="BN1d"), planes)[1] for dil in dilations_conv_list])
+        self.conv2 = nn.ModuleList(
+            [
+                build_conv_layer(dict(type="SubMConv3d"), planes, planes, kernel_size=3, padding=dil, dilation=dil, bias=False)
+                for dil in dilations_conv_list
+            ]
+        )
+        self.bn2 = nn.ModuleList([build_norm_layer(dict(type="BN1d"), planes)[1] for dil in dilations_conv_list])
         self.relu = nn.ReLU(inplace=True)
 
         # Convolution for output
-        self.conv_classes = nn.Conv3d(planes, nbr_classes, kernel_size=3, padding=1, stride=1)
+        self.conv_classes = build_conv_layer(dict(type="SubMConv3d"), planes, nbr_classes, kernel_size=3, padding=1, stride=1)
 
-    def forward(self, x_in):
+    def forward(self, feas: Tensor, coors: Tensor):
         # Dimension exapension
-        x_in = x_in[:, None, :, :, :]
+        spatial_shape = coors.max(0)[0][1:] + 1
+        batch_size = int(coors[-1, 0]) + 1
+        x = SparseConvTensor(feas, coors, spatial_shape, batch_size)
 
         # Convolution to go from inplanes to planes features...
-        x_in = self.relu(self.conv0(x_in))
+        x = self.conv0(x)
+        x = replace_feature(x, self.relu(x.features))
 
-        y = self.bn2[0](self.conv2[0](self.relu(self.bn1[0](self.conv1[0](x_in)))))
+        y = self.conv1[0](x)
+        y = replace_feature(y, self.relu(self.bn1[0](y.features)))
+        y = self.conv2[0](y)
+        y = replace_feature(y, self.bn2[0](y.features))
+
         for i in range(1, len(self.conv_list)):
-            y += self.bn2[i](self.conv2[i](self.relu(self.bn1[i](self.conv1[i](x_in)))))
-        x_in = self.relu(y + x_in)  # modified
+            y_ = self.conv1[i](x)
+            y_ = replace_feature(y_, self.relu(self.bn1[i](y_.features)))
+            y_ = self.conv2[i](y_)
+            y_ = replace_feature(y_, self.bn2[i](y_.features))
+            y = replace_feature(y, y.features + y_.features)
 
-        x_in = self.conv_classes(x_in)
+        x = replace_feature(x, self.relu(y.features + x.features))
 
-        return x_in
+        x = self.conv_classes(x)
+
+        return x.features
 
 
 @MODELS.register_module()
@@ -68,22 +94,18 @@ class SscHead(BaseModule):
         self,
         loss_focal: ConfigType = None,
         loss_ce: ConfigType = None,
-        conv_cfg: ConfigType = dict(type="Conv3d"),
-        norm_cfg: ConfigType = dict(type="BN3d"),
-        act_cfg: ConfigType = dict(type="ReLU"),
+        loss_lovasz: ConfigType = None,
         init_cfg: OptMultiConfig = None,
         ignore_index: int = 255,
         free_index: int = 0,
     ):
         super(SscHead, self).__init__(init_cfg=init_cfg)
-        self.conv_cfg = conv_cfg
-        self.norm_cfg = norm_cfg
-        self.act_cfg = act_cfg
+
         self.ignore_index = ignore_index
         self.free_index = free_index
 
         self.sc_class = SegmentationHead(
-            inplanes=1,
+            inplanes=4,
             planes=8,
             nbr_classes=20,
             dilations_conv_list=[1, 2, 3],
@@ -93,16 +115,18 @@ class SscHead(BaseModule):
             self.loss_focal = MODELS.build(loss_focal)
         if loss_ce is not None:
             self.loss_ce = MODELS.build(loss_ce)
+        if loss_lovasz is not None:
+            self.loss_lovasz = MODELS.build(loss_lovasz)
 
-    def forward(self, fea: Tensor = None) -> Tensor:
-        return self.sc_class(fea)
+    def forward(self, feas: Tensor = None, coors: Tensor = None) -> Tensor:
+        return self.sc_class(feas, coors)
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
         """Concat voxel-wise Groud Truth."""
         gt_semantic_segs = np.stack([data_sample.metainfo["voxel_label"] for data_sample in batch_data_samples], axis=0)
         return torch.from_numpy(gt_semantic_segs).long()
 
-    def loss_by_feat(self, geo_logits: Tensor, batch_data_samples: SampleList) -> Dict[str, Tensor]:
+    def loss_by_feat(self, geo_logits: Tensor, coors: Tensor, batch_data_samples: SampleList) -> Dict[str, Tensor]:
         """Compute semantic segmentation loss.
 
         Args:
@@ -116,14 +140,15 @@ class SscHead(BaseModule):
             Dict[str, Tensor]: A dictionary of loss components.
         """
 
-        seg_label = self._stack_batch_gt(batch_data_samples).to(geo_logits.device)
+        ssc_label = self._stack_batch_gt(batch_data_samples).to(geo_logits.device)[coors[:, 0], coors[:, 3], coors[:, 2], coors[:, 1]]
         losses = dict()
         # if hasattr(self, "loss_focal"):
         #     loss["loss_focal"] = self.loss_focal(seg_logit, seg_label, weight=self.class_weights, ignore_index=self.ignore_index)
-        losses["loss_sc"] = self.loss_ce(geo_logits, seg_label, ignore_index=self.ignore_index)
+        losses["loss_ce"] = self.loss_ce(geo_logits, ssc_label, ignore_index=self.ignore_index)
+        losses["loss_lovasz"] = self.loss_lovasz(geo_logits, ssc_label, ignore_index=self.ignore_index)
         return losses
 
-    def loss(self, geo_fea: Tensor, batch_data_samples: SampleList, train_cfg: ConfigType = None) -> Dict[str, Tensor]:
+    def loss(self, sparse_dict, batch_data_samples: SampleList, train_cfg: ConfigType = None) -> Dict[str, Tensor]:
         """Forward function for training.
 
         Args:
@@ -136,12 +161,14 @@ class SscHead(BaseModule):
         Returns:
             Dict[str, Tensor]: A dictionary of loss components.
         """
-        geo_logits = self.forward(geo_fea).permute(0, 1, 3, 4, 2)
+        feas = sparse_dict["features"]
+        coors = sparse_dict["coors"]
+        geo_logits = self.forward(feas, coors)
 
-        losses = self.loss_by_feat(geo_logits, batch_data_samples)
+        losses = self.loss_by_feat(geo_logits, coors, batch_data_samples)
         return losses
 
-    def predict(self, geo_fea: Tensor) -> List[Tensor]:
+    def predict(self, sparse_dict) -> List[Tensor]:
         """Forward function for testing.
 
         Args:
@@ -153,5 +180,7 @@ class SscHead(BaseModule):
             List[Tensor]: The segmentation prediction mask of each batch.
         """
 
-        geo_logits = self.forward(geo_fea[:, None, :, :, :]).permute(0, 1, 3, 4, 2)
+        feas = sparse_dict["features"]
+        coors = sparse_dict["coors"]
+        geo_logits = self.forward(feas, coors)
         return geo_logits
