@@ -6,9 +6,11 @@ from torch import Tensor
 from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
 from mmdet3d.utils import ConfigType, OptConfigType
+from spconv.pytorch import SparseConvTensor
+from spconv.pytorch.functional import sparse_add_hash_based
 
 
-class PositionEmbeddingLearned(nn.Module):
+class ScEmbeddingLearned(nn.Module):
     """Absolute pos embedding, learned."""
 
     def __init__(self, input_channel, num_pos_feats):
@@ -20,16 +22,17 @@ class PositionEmbeddingLearned(nn.Module):
             nn.Linear(num_pos_feats, num_pos_feats),
         )
 
-    def forward(self, xyz):
-        position_embedding = self.position_embedding_head(xyz)
+    def forward(self, sc_points):
+        position_embedding = self.position_embedding_head(sc_points)
         return position_embedding
 
 
 @MODELS.register_module()
-class DownsampleNet(BaseModule):
+class SampleNet(BaseModule):
     def __init__(
         self,
         top_k_scatter: int = 8,
+        sc_embedding_dim: int = 16,
         voxel_size: List = [0.2, 0.2, 0.2],
         pc_range: List = [0, -25.6, -2, 51.2, 25.6, 4.4],
     ):
@@ -39,8 +42,9 @@ class DownsampleNet(BaseModule):
         # weight conv
         self.voxel_size = torch.tensor(voxel_size)
         self.offset = torch.tensor(pc_range[:3])
+        self.sc_embedding = ScEmbeddingLearned(4, sc_embedding_dim)
 
-    def forward(self, geo_probs: Tensor, bev_fea: Tensor):
+    def forward(self, geo_probs: Tensor, bev_fea: Tensor, pts_feats: Tensor, pts_coors: Tensor) -> SparseConvTensor:
         B, _, H, W, D = geo_probs.shape
         K = H * W * self.top_k_scatter
         device = geo_probs.device
@@ -67,4 +71,12 @@ class DownsampleNet(BaseModule):
         sc_coors[:, 3] = sc_copy[:, 1]
         sc_coors[:, 1] = sc_copy[:, 3]
 
-        return sc_points, sc_coors
+        spatial_shape = sc_coors.max(0)[0][1:] + 1
+        batch_size = int(sc_coors[-1, 0]) + 1
+        sc_embeding = self.sc_embedding(sc_points)
+        bev_fea = SparseConvTensor(sc_embeding, sc_coors, spatial_shape, batch_size)
+        pts_fea = SparseConvTensor(pts_feats, pts_coors, spatial_shape, batch_size)
+
+        x = sparse_add_hash_based(bev_fea, pts_fea)
+
+        return x

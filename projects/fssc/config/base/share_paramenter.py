@@ -8,11 +8,8 @@ grid_size = [256, 256, 32]
 scale = "1_1"
 
 # model parameters
-k_scatter = 4
-range_encoder_channel = 128
-fuse_channel = 256
-range_out_channel = 128
-head_channel = 32
+k_scatter = 8
+sc_embedding_dim = 16
 
 # loss parameters
 ignore_index = 255

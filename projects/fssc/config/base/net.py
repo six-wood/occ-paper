@@ -1,7 +1,7 @@
 import torch.nn as nn
 from projects.fssc.plugin.model.ssc_head import SscHead
 from projects.fssc.plugin.model.sc_head import ScHead
-from projects.fssc.plugin.model.neck import DownsampleNet
+from projects.fssc.plugin.model.neck import SampleNet
 from projects.fssc.plugin.model.ssc_net import SscNet
 from projects.fssc.plugin.model.bev_backbone import BevNet
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
@@ -26,6 +26,16 @@ model = dict(
             max_voxels=(-1, -1),
         ),
     ),
+    pts_voxel_encoder=dict(
+        type="DynamicVFE",
+        in_channels=4,
+        feat_channels=[sc_embedding_dim],
+        voxel_size=voxel_size,
+        point_cloud_range=point_cloud_range,
+        with_distance=False,
+        with_cluster_center=True,
+        with_voxel_center=True,
+    ),
     bev_backbone=dict(
         type=BevNet,
         bev_input_dimensions=32,
@@ -35,6 +45,7 @@ model = dict(
         bev_strides=(2, 2, 2),
         bev_dilations=(1, 1, 1),
         bev_encoder_out_channels=(48, 64, 80),
+        bev_decoder_blocks=(1, 1, 1),
         bev_decoder_out_channels=(64, 48, 32),
     ),
     sc_head=dict(
@@ -48,13 +59,17 @@ model = dict(
         ),
     ),
     neck=dict(
-        type=DownsampleNet,
-        top_k_scatter=8,
+        type=SampleNet,
+        top_k_scatter=k_scatter,
+        sc_embedding_dim=sc_embedding_dim,
         voxel_size=voxel_size,
         pc_range=point_cloud_range,
     ),
     ssc_head=dict(
         type=SscHead,
+        in_channels=sc_embedding_dim,
+        mid_channels=32,
+        num_classes=num_classes,
         loss_ce=dict(
             type=CrossEntropyLoss,
             class_weight=semantickitti_class_weight,

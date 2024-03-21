@@ -1,5 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from typing import Dict, List
+from typing import Dict, List, Optional, Sequence
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -12,15 +12,15 @@ from mmdet3d.structures.det3d_data_sample import OptSampleList, SampleList
 from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 from mmdet3d.models.utils import add_prefix
 
-
 @MODELS.register_module()
 class SscNet(MVXTwoStageDetector):
     def __init__(
         self,
         bev_backbone: ConfigType = None,
-        ssc_head: ConfigType = None,
+        pts_voxel_encoder: ConfigType = None,
         sc_head: ConfigType = None,
         neck: OptConfigType = None,
+        ssc_head: ConfigType = None,
         # sparse_backbone: OptConfigType = None,
         # ssc_head: OptConfigType = None,
         train_cfg: OptConfigType = None,
@@ -35,6 +35,8 @@ class SscNet(MVXTwoStageDetector):
 
         if bev_backbone is not None:
             self.bev_backbone = MODELS.build(bev_backbone)
+        if pts_voxel_encoder is not None:
+            self.pts_voxel_encoder = MODELS.build(pts_voxel_encoder)
         if ssc_head is not None:
             self.ssc_head = MODELS.build(ssc_head)
         if sc_head is not None:
@@ -55,7 +57,7 @@ class SscNet(MVXTwoStageDetector):
         self.pc_range = self.data_preprocessor.voxel_layer.point_cloud_range
         self.voxel_size = self.data_preprocessor.voxel_layer.voxel_size
 
-    def extract_bev_feat(self, voxels: Tensor) -> Tensor:
+    def extract_bev_feat(self, voxel_dict: Dict[str, Tensor]) -> Tensor:
         """Extract features from BEV images.
 
         Args:
@@ -64,7 +66,7 @@ class SscNet(MVXTwoStageDetector):
         Returns:
             Tensor: Extracted features from BEV images.
         """
-        coors = voxels["coors"]  # z y x
+        coors = voxel_dict["coors"]  # z y x
         batch_size = coors[-1, 0] + 1
         bev_map = torch.zeros(
             (batch_size, self.grid_shape[2], self.grid_shape[0], self.grid_shape[1]),
@@ -75,6 +77,13 @@ class SscNet(MVXTwoStageDetector):
         bev_feature = self.bev_backbone(bev_map)  # channel first
 
         return bev_feature
+
+    def extract_pts_feat(
+        self,
+        voxel_dict: Dict[str, Tensor],
+    ) -> Sequence[Tensor]:
+        voxel_features, feature_coors = self.pts_voxel_encoder(voxel_dict["voxels"], voxel_dict["coors"])
+        return voxel_features, feature_coors
 
     def loss(self, batch_inputs_dict: dict, batch_data_samples: SampleList) -> Dict[str, Tensor]:
         """Calculate losses from a batch of inputs and data samples.
@@ -93,17 +102,17 @@ class SscNet(MVXTwoStageDetector):
             Dict[str, Tensor]: A dictionary of loss components.
         """
         # extract features using backbone
-        vxoels = batch_inputs_dict["voxels"]
+        vxoel_dict = batch_inputs_dict["voxels"]
 
-        y = self.extract_bev_feat(vxoels)
-        geo_probs = F.softmax(self.sc_head.predict(y), dim=1)
-        sc_points, sc_coors = self.neck(geo_probs, y)
-        sparse_dict = {"features": sc_points, "coors": sc_coors}
+        bev_fea = self.extract_bev_feat(vxoel_dict)
+        pts_fea, pts_coors = self.extract_pts_feat(vxoel_dict)
+        geo_probs = F.softmax(self.sc_head.predict(bev_fea), dim=1)
+        sparse_fea = self.neck(geo_probs, bev_fea, pts_fea, pts_coors)
 
         losses = dict()
 
-        loss_sc = self.sc_head.loss(y, batch_data_samples)
-        loss_ssc = self.ssc_head.loss(sparse_dict, batch_data_samples)
+        loss_sc = self.sc_head.loss(bev_fea, batch_data_samples)
+        loss_ssc = self.ssc_head.loss(sparse_fea, batch_data_samples)
 
         losses.update(add_prefix(loss_sc, "sc"))
         losses.update(add_prefix(loss_ssc, "ssc"))
@@ -138,16 +147,16 @@ class SscNet(MVXTwoStageDetector):
               segmentation before normalization.
         """
 
-        vxoels = batch_inputs_dict["voxels"]
+        vxoel_dict = batch_inputs_dict["voxels"]
 
-        y = self.extract_bev_feat(vxoels)
-        geo_probs = F.softmax(self.sc_head.predict(y), dim=1)
-        sc_points, sc_coors = self.neck(geo_probs, y)
-        sparse_dict = {"features": sc_points, "coors": sc_coors}
+        bev_fea = self.extract_bev_feat(vxoel_dict)
+        pts_fea, pts_coors = self.extract_pts_feat(vxoel_dict)
+        geo_probs = F.softmax(self.sc_head.predict(bev_fea), dim=1)
+        sparse_fea = self.neck(geo_probs, bev_fea, pts_fea, pts_coors)
 
-        ssc_pred = self.ssc_head.predict(sparse_dict).argmax(dim=1)
+        ssc_pred = self.ssc_head.predict(sparse_fea).argmax(dim=1)
 
-        return self.postprocess_result(ssc_pred, sc_coors, batch_data_samples)
+        return self.postprocess_result(ssc_pred, sparse_fea.indices, batch_data_samples)
 
     def postprocess_result(self, ssc_labels: Tensor, sc_coors: Tensor, batch_data_samples: SampleList) -> SampleList:
         """Convert results list to `Det3DDataSample`.

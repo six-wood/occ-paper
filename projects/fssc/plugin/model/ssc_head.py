@@ -52,12 +52,7 @@ class SegmentationHead(nn.Module):
         # Convolution for output
         self.conv_classes = build_conv_layer(dict(type="SubMConv3d"), planes, nbr_classes, kernel_size=3, padding=1, stride=1)
 
-    def forward(self, feas: Tensor, coors: Tensor):
-        # Dimension exapension
-        spatial_shape = coors.max(0)[0][1:] + 1
-        batch_size = int(coors[-1, 0]) + 1
-        x = SparseConvTensor(feas, coors, spatial_shape, batch_size)
-
+    def forward(self, x: SparseConvTensor):
         # Convolution to go from inplanes to planes features...
         x = self.conv0(x)
         x = replace_feature(x, self.relu(x.features))
@@ -92,6 +87,9 @@ class SscHead(BaseModule):
 
     def __init__(
         self,
+        in_channels: int = 16,
+        mid_channels: int = 32,
+        num_classes: int = 20,
         loss_focal: ConfigType = None,
         loss_ce: ConfigType = None,
         loss_lovasz: ConfigType = None,
@@ -105,9 +103,9 @@ class SscHead(BaseModule):
         self.free_index = free_index
 
         self.sc_class = SegmentationHead(
-            inplanes=4,
-            planes=8,
-            nbr_classes=20,
+            inplanes=in_channels,
+            planes=mid_channels,
+            nbr_classes=num_classes,
             dilations_conv_list=[1, 2, 3],
         )
 
@@ -118,8 +116,8 @@ class SscHead(BaseModule):
         if loss_lovasz is not None:
             self.loss_lovasz = MODELS.build(loss_lovasz)
 
-    def forward(self, feas: Tensor = None, coors: Tensor = None) -> Tensor:
-        return self.sc_class(feas, coors)
+    def forward(self, x: SparseConvTensor) -> Tensor:
+        return self.sc_class(x)
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
         """Concat voxel-wise Groud Truth."""
@@ -148,7 +146,7 @@ class SscHead(BaseModule):
         losses["loss_lovasz"] = self.loss_lovasz(geo_logits, ssc_label, ignore_index=self.ignore_index)
         return losses
 
-    def loss(self, sparse_dict, batch_data_samples: SampleList, train_cfg: ConfigType = None) -> Dict[str, Tensor]:
+    def loss(self, x: SparseConvTensor, batch_data_samples: SampleList, train_cfg: ConfigType = None) -> Dict[str, Tensor]:
         """Forward function for training.
 
         Args:
@@ -161,14 +159,13 @@ class SscHead(BaseModule):
         Returns:
             Dict[str, Tensor]: A dictionary of loss components.
         """
-        feas = sparse_dict["features"]
-        coors = sparse_dict["coors"]
-        geo_logits = self.forward(feas, coors)
 
-        losses = self.loss_by_feat(geo_logits, coors, batch_data_samples)
+        geo_logits = self.forward(x)
+
+        losses = self.loss_by_feat(geo_logits, x.indices, batch_data_samples)
         return losses
 
-    def predict(self, sparse_dict) -> List[Tensor]:
+    def predict(self, x: SparseConvTensor) -> List[Tensor]:
         """Forward function for testing.
 
         Args:
@@ -180,7 +177,5 @@ class SscHead(BaseModule):
             List[Tensor]: The segmentation prediction mask of each batch.
         """
 
-        feas = sparse_dict["features"]
-        coors = sparse_dict["coors"]
-        geo_logits = self.forward(feas, coors)
+        geo_logits = self.forward(x)
         return geo_logits
