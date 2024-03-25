@@ -166,23 +166,8 @@ def main(config):
             for scale in downscaling:
                 filename = frame_id + "_" + scale + ".npy"
                 label_filename = os.path.join(out_dir, filename)
-                # If files have not been created...
-                # if not os.path.exists(label_filename):
-                # if scale != "1_1":
-                #     LABEL_ds = _downsample_label(LABEL, (256, 256, 32), downscaling[scale])
-                # else:
-                #     LABEL_ds = LABEL
-                # LABEL_ds = label_rectification(grid_ind, LABEL_ds, PC_INSTANCE)WWW
-                # np.save(label_filename, LABEL_ds)
-                # print("wrote to", label_filename)
                 LABEL_ds = LABEL
-                LABEL_ds = label_rectification(grid_ind, LABEL_ds, PC_INSTANCE)
-
-                # if sequence != "08":
-                #     MYVALID = compute_valid_mask(LABEL_ds, grid_center, 0, 255)
-                #     LABEL_ds[~MYVALID] = 255
-                #     LABEL_ds[INVISIBILITY] = 255
-
+                # LABEL_ds = label_rectification(grid_ind, LABEL_ds, PC_INSTANCE)
                 LABEL[INVALID] = 255
 
                 np.save(label_filename, LABEL_ds)

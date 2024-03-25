@@ -1,11 +1,74 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
 from typing import Optional, Sequence, Tuple
 from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 from mmcv.cnn import ConvModule, build_activation_layer, build_conv_layer, build_norm_layer
+
+
+class eca_layer(nn.Module):
+    """Constructs a ECA module.
+
+    Args:
+        channel: Number of channels of the input feature map
+        k_size: Adaptive selection of kernel size
+    """
+
+    def __init__(self, channel, k_size=3):
+        super(eca_layer, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x: Tensor) -> Tensor:
+        # feature descriptor on the global spatial information
+        y = self.avg_pool(x)
+
+        # Two different branches of ECA module
+        y = self.conv(y.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
+
+        # Multi-scale information fusion
+        y = self.sigmoid(y)
+
+        return x * y.expand_as(x)
+
+
+class group_eca_layer(nn.Module):
+    """Constructs a ECA module.
+
+    Args:
+        channel: Number of channels of the input feature map
+        k_size: Adaptive selection of kernel size
+    """
+
+    def __init__(self, groups=8, k_size=3):
+        super(group_eca_layer, self).__init__()
+        self.groups = groups
+        self.avg_pool = nn.AdaptiveAvgPool2d(groups)
+        self.conv = nn.Conv1d(groups * groups, groups * groups, groups=groups * groups, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False)
+        self.up_sample = nn.Upsample(scale_factor=groups, mode="nearest")
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x: Tensor) -> Tensor:
+        # feature map shape
+        B, C, H, W = x.shape
+
+        # feature descriptor on the global spatial information
+        y = self.avg_pool(x)
+
+        # Two different branches of ECA module
+        y = self.conv(y.view(B, C, -1).transpose(-1, -2)).transpose(-1, -2).view(B, C, self.groups, self.groups)
+
+        # up sample the attentions to the original feature map size
+        y = F.interpolate(y, size=(H, W), mode="nearest")
+
+        # Multi-scale information fusion
+        y = self.sigmoid(y)
+
+        return x * y
 
 
 class BasicBlock(BaseModule):
@@ -15,12 +78,13 @@ class BasicBlock(BaseModule):
         planes: int,
         stride: int = 1,
         dilation: int = 1,
+        k_size: int = 3,
+        groups: int = 8,
         downsample: Optional[nn.Module] = None,
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
         act_cfg: ConfigType = dict(type="LeakyReLU"),
         init_cfg: OptMultiConfig = None,
-        frozen: bool = False,
     ) -> None:
         super(BasicBlock, self).__init__(init_cfg)
 
@@ -33,9 +97,8 @@ class BasicBlock(BaseModule):
         self.add_module(self.norm2_name, norm2)
         self.relu = build_activation_layer(act_cfg)
         self.downsample = downsample
-        if frozen:
-            for param in self.parameters():
-                param.requires_grad = False
+
+        self.eca = group_eca_layer(groups=groups, k_size=k_size)
 
     @property
     def norm1(self) -> nn.Module:
@@ -59,6 +122,7 @@ class BasicBlock(BaseModule):
 
         out = self.conv2(out)
         out = self.norm2(out)
+        out = self.eca(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -75,14 +139,15 @@ class BevNet(BaseModule):
         bev_input_dimensions: int = 32,
         bev_stem_channels: int = 32,
         bev_num_stages: int = 3,
-        bev_stage_blocks: Sequence[int] = (1, 1, 1),
+        bev_stage_blocks: Sequence[int] = (4, 4, 4),
         bev_strides: Sequence[int] = (2, 2, 2),
         bev_dilations: Sequence[int] = (1, 1, 1),
         bev_encoder_out_channels: Sequence[int] = (48, 64, 80),
+        bev_decoder_blocks: Sequence[int] = (1, 1, 1),
         bev_decoder_out_channels: Sequence[int] = (64, 48, 32),
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),
-        act_cfg: ConfigType = dict(type="LeakyReLU"),
+        act_cfg: ConfigType = dict(type="ReLU", inplace=True),
         init_cfg: OptMultiConfig = None,
     ):
         super().__init__(init_cfg=init_cfg)
@@ -134,20 +199,51 @@ class BevNet(BaseModule):
         d_out2 = bev_decoder_out_channels[1]
         d_out3 = bev_decoder_out_channels[2]
 
+        stage1 = bev_stage_blocks[0]
+        stage2 = bev_stage_blocks[1]
+        stage3 = bev_stage_blocks[2]
+
         # decode block 1
         self.up_sample1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=2, padding=0, stride=2, bias=False)
-        self.conv_layer1 = self._make_conv_layer(d_in1 + e_out3, d_out1)
+        self.conv_layer1 = self.make_res_layer(
+            inplanes=d_in1 + e_out3,
+            planes=d_out1,
+            num_blocks=stage1,
+            stride=1,
+            dilation=1,
+            conv_cfg=conv_cfg,
+            norm_cfg=norm_cfg,
+            act_cfg=act_cfg,
+        )
 
         # decode block 2
         self.up_sample2 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=2, padding=0, stride=2, bias=False)
         self.up_sample2_1 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=4, padding=0, stride=4, bias=False)
-        self.conv_layer2 = self._make_conv_layer(d_out1 + d_in1 + e_out2, d_out2)
+        self.conv_layer2 = self.make_res_layer(
+            inplanes=d_out1 + d_in1 + e_out2,
+            planes=d_out2,
+            num_blocks=stage2,
+            stride=1,
+            dilation=1,
+            conv_cfg=conv_cfg,
+            norm_cfg=norm_cfg,
+            act_cfg=act_cfg,
+        )
 
         # decode block 3
         self.up_sample3 = nn.ConvTranspose2d(d_out2, d_out2, kernel_size=2, padding=0, stride=2, bias=False)
         self.up_sample3_1 = nn.ConvTranspose2d(d_out1, d_out1, kernel_size=4, padding=0, stride=4, bias=False)
         self.up_sample3_2 = nn.ConvTranspose2d(d_in1, d_in1, kernel_size=8, padding=0, stride=8, bias=False)
-        self.conv_layer3 = self._make_conv_layer(d_out2 + d_out1 + d_in1 + stem_out, d_out3)
+        self.conv_layer3 = self.make_res_layer(
+            inplanes=d_out2 + d_out1 + d_in1 + stem_out,
+            planes=d_out3,
+            num_blocks=stage3,
+            stride=1,
+            dilation=1,
+            conv_cfg=conv_cfg,
+            norm_cfg=norm_cfg,
+            act_cfg=act_cfg,
+        )
 
     def _make_conv_layer(self, in_channels: int, out_channels: int) -> None:  # two conv blocks in beginning
         return nn.Sequential(

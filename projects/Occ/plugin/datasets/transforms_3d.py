@@ -126,6 +126,7 @@ class LoadVoxelLabelFromFile(BaseTransform):
     def transform(self, results: dict) -> dict:
         target = np.load(results["voxel_label_path"]["1_1"])
         target = target.reshape(-1).reshape(self.grid_size).astype(np.float32)
+        target = np.where(((target != 0) & (target != 255)), 1, target)
         results["voxel_label"] = target
         return results
 

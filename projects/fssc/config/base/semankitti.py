@@ -141,7 +141,7 @@ train_pipeline = [
     ),
     dict(
         type=Pack3DDetInputs,
-        keys=["gt_semantic_seg", "points"],
+        keys=["pts_semantic_mask", "points"],
         meta_keys=("voxel_label",),
     ),
 ]

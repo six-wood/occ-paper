@@ -74,9 +74,9 @@ default_hooks.update(
 # train_dataloader.update(dataset=dict(indices=2))
 # val_dataloader.update(dataset=dict(indices=2))
 
-# vis_backends = [
-#     dict(type=LocalVisBackend),
-#     dict(type=WandbVisBackend, init_kwargs=dict(project="pretrain-sc-range", name="minkunet")),
-# ]
+vis_backends = [
+    dict(type=LocalVisBackend),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="sc-test", name="eca-orignSize")),
+]
 
-# visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
+visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")

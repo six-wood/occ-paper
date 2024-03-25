@@ -13,14 +13,15 @@ from spconv.pytorch.functional import sparse_add_hash_based
 class ScEmbeddingLearned(nn.Module):
     """Absolute pos embedding, learned."""
 
-    def __init__(self, input_channel, num_pos_feats):
+    def __init__(self, input_channel, channels):
         super().__init__()
-        self.position_embedding_head = nn.Sequential(
-            nn.Linear(input_channel, num_pos_feats),
-            nn.BatchNorm1d(num_pos_feats),
-            nn.ReLU(inplace=True),
-            nn.Linear(num_pos_feats, num_pos_feats),
-        )
+        self.position_embedding_head = nn.Sequential()
+        for i, channel in enumerate(channels):
+            self.position_embedding_head.add_module(f"linear{i}", nn.Linear(input_channel, channel))
+            self.position_embedding_head.add_module(f"bn{i}", nn.BatchNorm1d(channel))
+            self.position_embedding_head.add_module(f"relu{i}", nn.ReLU())
+            input_channel = channel
+        self.position_embedding_head.add_module("linear", nn.Linear(channels[-1], channels[-1]))
 
     def forward(self, sc_points):
         position_embedding = self.position_embedding_head(sc_points)
@@ -32,7 +33,7 @@ class SampleNet(BaseModule):
     def __init__(
         self,
         top_k_scatter: int = 8,
-        sc_embedding_dim: int = 16,
+        sc_embedding_dim: List[int] = [16, 32],
         voxel_size: List = [0.2, 0.2, 0.2],
         pc_range: List = [0, -25.6, -2, 51.2, 25.6, 4.4],
     ):

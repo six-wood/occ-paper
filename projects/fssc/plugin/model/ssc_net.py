@@ -12,17 +12,17 @@ from mmdet3d.structures.det3d_data_sample import OptSampleList, SampleList
 from mmdet3d.utils import ConfigType, OptConfigType, OptMultiConfig
 from mmdet3d.models.utils import add_prefix
 
+
 @MODELS.register_module()
 class SscNet(MVXTwoStageDetector):
     def __init__(
         self,
         bev_backbone: ConfigType = None,
-        pts_voxel_encoder: ConfigType = None,
+        pts_backbone: ConfigType = None,
         sc_head: ConfigType = None,
         neck: OptConfigType = None,
         ssc_head: ConfigType = None,
-        # sparse_backbone: OptConfigType = None,
-        # ssc_head: OptConfigType = None,
+        aux_head: OptConfigType = None,
         train_cfg: OptConfigType = None,
         test_cfg: OptConfigType = None,
         data_preprocessor: OptConfigType = None,
@@ -35,20 +35,24 @@ class SscNet(MVXTwoStageDetector):
 
         if bev_backbone is not None:
             self.bev_backbone = MODELS.build(bev_backbone)
-        if pts_voxel_encoder is not None:
-            self.pts_voxel_encoder = MODELS.build(pts_voxel_encoder)
-        if ssc_head is not None:
-            self.ssc_head = MODELS.build(ssc_head)
+
         if sc_head is not None:
             self.sc_head = MODELS.build(sc_head)
+            
 
         if neck is not None:
             self.neck = MODELS.build(neck)
+            
+        if ssc_head is not None:
+            self.ssc_head = MODELS.build(ssc_head)
 
-        # if sparse_backbone is not None:
-        #     self.sparse_backbone = MODELS.build(sparse_backbone)
-        # if ssc_head is not None:
-        #     self.ssc_head = MODELS.build(ssc_head)
+        if pts_backbone is not None:
+            self.pts_backbone = MODELS.build(pts_backbone)
+            
+        self.with_aux_head = True if aux_head is not None else False
+        if aux_head is not None:
+            self.aux_head = MODELS.build(aux_head)
+
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
@@ -82,8 +86,10 @@ class SscNet(MVXTwoStageDetector):
         self,
         voxel_dict: Dict[str, Tensor],
     ) -> Sequence[Tensor]:
-        voxel_features, feature_coors = self.pts_voxel_encoder(voxel_dict["voxels"], voxel_dict["coors"])
-        return voxel_features, feature_coors
+        # feas, coors = self.pts_voxel_encoder(voxel_dict["voxels"], voxel_dict["coors"])
+        # feas = self.pts_middle_encoder(feas, coors)
+        feas, coors = self.pts_backbone(voxel_dict["voxels"], voxel_dict["coors"])
+        return feas, coors
 
     def loss(self, batch_inputs_dict: dict, batch_data_samples: SampleList) -> Dict[str, Tensor]:
         """Calculate losses from a batch of inputs and data samples.
@@ -113,6 +119,9 @@ class SscNet(MVXTwoStageDetector):
 
         loss_sc = self.sc_head.loss(bev_fea, batch_data_samples)
         loss_ssc = self.ssc_head.loss(sparse_fea, batch_data_samples)
+        if self.with_aux_head:
+            loss_aux = self.aux_head.loss(pts_fea, batch_data_samples, self.train_cfg)
+            losses.update(add_prefix(loss_aux, "aux"))
 
         losses.update(add_prefix(loss_sc, "sc"))
         losses.update(add_prefix(loss_ssc, "ssc"))

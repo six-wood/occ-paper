@@ -9,7 +9,7 @@ scale = "1_1"
 
 # model parameters
 k_scatter = 8
-sc_embedding_dim = 16
+sc_embedding_dim = 32
 
 # loss parameters
 ignore_index = 255

@@ -35,15 +35,15 @@ model = dict(
         bev_stage_blocks=(4, 4, 4),
         bev_strides=(2, 2, 2),
         bev_dilations=(1, 1, 1),
-        bev_encoder_out_channels=(48, 64, 80),
-        bev_decoder_out_channels=(64, 48, 32),
+        bev_encoder_out_channels=(64, 96, 128),
+        bev_decoder_out_channels=(96, 64, 32),
         act_cfg=dict(type=nn.Hardswish, inplace=True),
     ),
     sc_head=dict(
         type=ScHead,
         loss_ce=dict(
             type=CrossEntropyLoss,
-            class_weight=semantickitti_class_weight,
+            class_weight=geo_class_weight,
             ignore_index=ignore_index,
             loss_weight=1.0,
             avg_non_ignore=True,

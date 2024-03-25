@@ -20,14 +20,14 @@ default_hooks.update(
 
 
 # debug
-train_dataloader.update(batch_size=4)
-val_dataloader.update(batch_size=4)
-train_dataloader.update(dataset=dict(indices=2))
-val_dataloader.update(dataset=dict(indices=2))
+# train_dataloader.update(batch_size=4)
+# val_dataloader.update(batch_size=4)
+# train_dataloader.update(dataset=dict(indices=2))
+# val_dataloader.update(dataset=dict(indices=2))
 
-# vis_backends = [
-#     dict(type=LocalVisBackend),
-#     dict(type=WandbVisBackend, init_kwargs=dict(project="bev-top8K", name="8group-eca-aspp-alldata")),
-# ]
+vis_backends = [
+    dict(type=LocalVisBackend),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="bev-top8K", name="32encoder-add8ecaaspp-1/4")),
+]
 
-# visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
+visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
