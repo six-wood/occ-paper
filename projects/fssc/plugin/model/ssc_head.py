@@ -91,7 +91,7 @@ class SscHead(BaseModule):
 
     def __init__(
         self,
-        out_channels: int = 96,
+        # out_channels: int = 96,
         num_classes: int = 20,
         voxel_net: ConfigType = None,
         loss_focal: ConfigType = None,
@@ -106,10 +106,11 @@ class SscHead(BaseModule):
         self.ignore_index = ignore_index
         self.free_index = free_index
 
-        self.class_seg = nn.Linear(out_channels, num_classes)
+        # self.class_seg = nn.Linear(out_channels, num_classes)
+        self.class_seg = SegmentationHead(16, 32, num_classes, [1, 2, 3])
 
-        if voxel_net is not None:
-            self.voxel_net = MODELS.build(voxel_net)
+        # if voxel_net is not None:
+        #     self.voxel_net = MODELS.build(voxel_net)
 
         if loss_focal is not None:
             self.loss_focal = MODELS.build(loss_focal)
@@ -119,8 +120,9 @@ class SscHead(BaseModule):
             self.loss_lovasz = MODELS.build(loss_lovasz)
 
     def forward(self, x: SparseConvTensor) -> Tensor:
-        fea = self.voxel_net(x.features, x.indices)
-        logits = self.class_seg(fea)
+        # fea = self.voxel_net(x.features, x.indices)
+        # logits = self.class_seg(fea)
+        logits = self.class_seg(x.features, x.indices)
         return logits
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:

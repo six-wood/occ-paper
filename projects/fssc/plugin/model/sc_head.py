@@ -15,6 +15,43 @@ from mmdet3d.structures.det3d_data_sample import SampleList
 from mmcv.cnn import ConvModule
 
 
+class SegmentationHead(nn.Module):
+    """
+    3D Segmentation heads to retrieve semantic segmentation at each scale.
+    Formed by Dim expansion, Conv3D, ASPP block, Conv3D.
+    """
+
+    def __init__(self, inplanes, planes, nbr_classes, dilations_conv_list):
+        super().__init__()
+
+        # First convolution
+        self.conv0 = nn.Conv3d(inplanes, planes, kernel_size=3, padding=1, stride=1)
+
+        # ASPP Block
+        self.conv_list = dilations_conv_list
+        self.conv1 = nn.ModuleList([nn.Conv3d(planes, planes, kernel_size=3, padding=dil, dilation=dil, bias=False) for dil in dilations_conv_list])
+        self.bn1 = nn.ModuleList([nn.BatchNorm3d(planes) for dil in dilations_conv_list])
+        self.conv2 = nn.ModuleList([nn.Conv3d(planes, planes, kernel_size=3, padding=dil, dilation=dil, bias=False) for dil in dilations_conv_list])
+        self.bn2 = nn.ModuleList([nn.BatchNorm3d(planes) for dil in dilations_conv_list])
+        self.relu = nn.ReLU(inplace=True)
+
+        # Convolution for output
+        self.conv_classes = nn.Conv3d(planes, nbr_classes, kernel_size=3, padding=1, stride=1)
+
+    def forward(self, x_in):
+        # Convolution to go from inplanes to planes features...
+        x_in = self.relu(self.conv0(x_in))
+
+        y = self.bn2[0](self.conv2[0](self.relu(self.bn1[0](self.conv1[0](x_in)))))
+        for i in range(1, len(self.conv_list)):
+            y += self.bn2[i](self.conv2[i](self.relu(self.bn1[i](self.conv1[i](x_in)))))
+        x_in = self.relu(y + x_in)  # modified
+
+        x_in = self.conv_classes(x_in)
+
+        return x_in
+
+
 @MODELS.register_module()
 class ScHead(BaseModule):
     """
@@ -42,7 +79,7 @@ class ScHead(BaseModule):
         self.ignore_index = ignore_index
         self.free_index = free_index
 
-        self.sc_class = ConvModule(1, 2, 1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
+        self.sc_class = SegmentationHead(1, 8, 2, [1, 2, 3])
 
         if loss_lovasz is not None:
             self.loss_lovasz = MODELS.build(loss_lovasz)

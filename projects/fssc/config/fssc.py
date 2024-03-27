@@ -25,9 +25,9 @@ default_hooks.update(
 # val_dataloader.update(dataset=dict(indices=2))
 # model_wrapper_cfg = dict(type="MMDistributedDataParallel", detect_anomalous_params=True)
 
-# vis_backends = [
-#     dict(type=LocalVisBackend),
-#     dict(type=WandbVisBackend, init_kwargs=dict(project="bev-top8K", name="atten-16encoder-add8ecaaspp-1/4")),
-# ]
+vis_backends = [
+    dict(type=LocalVisBackend),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="bev-top8K", name="atten-16encoder-8ecaaspp")),
+]
 
-# visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
+visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
