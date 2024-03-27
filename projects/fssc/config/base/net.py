@@ -10,6 +10,7 @@ from projects.fssc.plugin.model.pts_backbone import PtsNet
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
 from mmdet3d.models.losses import LovaszLoss
 from mmdet3d.models.voxel_encoders import DynamicVFE
+from mmdet3d.models.backbones import MinkUNetBackbone
 
 from mmengine.config import read_base
 
@@ -42,12 +43,10 @@ model = dict(
             with_voxel_center=True,
         ),
         in_channels=16,
-        base_channels=32,
+        base_channels=16,
         num_stages=1,
-        encoder_channels=[32],
+        encoder_channels=[16],
         encoder_blocks=[1],
-        decoder_channels=[32],
-        decoder_blocks=[1],
         block_type="basic",
     ),
     bev_backbone=dict(
@@ -75,16 +74,27 @@ model = dict(
     neck=dict(
         type=SampleNet,
         top_k_scatter=k_scatter,
-        sc_embedding_dim=[16, 32],
+        sc_embedding_dim=[16],
         voxel_size=voxel_size,
         pc_range=point_cloud_range,
     ),
     ssc_head=dict(
         type=SscHead,
-        in_channels=32,
-        ignore_index=ignore_index,
-        mid_channels=32,
+        in_channels=16,
         num_classes=num_classes,
+        ignore_index=ignore_index,
+        # voxel_head=dict(
+        #     type=MinkUNetBackbone,
+        #     in_channels=4,
+        #     num_stages=4,
+        #     base_channels=32,
+        #     encoder_channels=[32, 64, 128, 256],
+        #     encoder_blocks=[2, 2, 2, 2],
+        #     decoder_channels=[256, 128, 96, 96],
+        #     decoder_blocks=[2, 2, 2, 2],
+        #     block_type="basic",
+        #     sparseconv_backend="spconv",
+        # ),
         loss_ce=dict(
             type=CrossEntropyLoss,
             class_weight=semantickitti_class_weight,
@@ -98,17 +108,4 @@ model = dict(
             reduction="none",
         ),
     ),
-    # aux_head=dict(
-    #     type=PtsAuxHead,
-    #     channels=sc_embedding_dim,
-    #     num_classes=num_classes,
-    #     ignore_index=free_index,
-    #     dropout_ratio=0.0,
-    #     loss_decode=dict(
-    #         type=CrossEntropyLoss,
-    #         class_weight=semantickitti_class_weight,
-    #         loss_weight=1.0,
-    #         avg_non_ignore=True,
-    #     ),
-    # ),
 )

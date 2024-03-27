@@ -5,9 +5,25 @@ from typing import List
 from torch import Tensor
 from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
-from mmdet3d.utils import ConfigType, OptConfigType
 from spconv.pytorch import SparseConvTensor
 from spconv.pytorch.functional import sparse_add_hash_based
+from mmdet3d.models.layers.sparse_block import make_sparse_convmodule, replace_feature
+
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=3):
+        super(SpatialAttention, self).__init__()
+
+        self.conv1 = make_sparse_convmodule(2, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x: SparseConvTensor):
+        avg_out = torch.mean(x.features, dim=1, keepdim=True)
+        max_out, _ = torch.max(x.features, dim=1, keepdim=True)
+        y = SparseConvTensor(torch.cat([avg_out, max_out], dim=1), x.indices, x.spatial_shape, x.batch_size)
+        y = self.conv1(y)
+
+        return replace_feature(x, self.sigmoid(y.features) * x.features)
 
 
 class ScEmbeddingLearned(nn.Module):
@@ -33,6 +49,7 @@ class SampleNet(BaseModule):
     def __init__(
         self,
         top_k_scatter: int = 8,
+        attention_kernel_size: int = 3,
         sc_embedding_dim: List[int] = [16, 32],
         voxel_size: List = [0.2, 0.2, 0.2],
         pc_range: List = [0, -25.6, -2, 51.2, 25.6, 4.4],
@@ -44,6 +61,7 @@ class SampleNet(BaseModule):
         self.voxel_size = torch.tensor(voxel_size)
         self.offset = torch.tensor(pc_range[:3])
         self.sc_embedding = ScEmbeddingLearned(4, sc_embedding_dim)
+        self.spatial_attention = SpatialAttention(kernel_size=attention_kernel_size)
 
     def forward(self, geo_probs: Tensor, bev_fea: Tensor, pts_feats: Tensor, pts_coors: Tensor) -> SparseConvTensor:
         B, _, H, W, D = geo_probs.shape
@@ -79,5 +97,6 @@ class SampleNet(BaseModule):
         pts_fea = SparseConvTensor(pts_feats, pts_coors, spatial_shape, batch_size)
 
         x = sparse_add_hash_based(bev_fea, pts_fea)
+        x = self.spatial_attention(x)
 
         return x

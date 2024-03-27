@@ -52,8 +52,12 @@ class SegmentationHead(nn.Module):
         # Convolution for output
         self.conv_classes = build_conv_layer(dict(type="SubMConv3d"), planes, nbr_classes, kernel_size=3, padding=1, stride=1)
 
-    def forward(self, x: SparseConvTensor):
+    def forward(self, feas: Tensor, coors: Tensor):
         # Convolution to go from inplanes to planes features...
+        spatial_shape = coors.max(0)[0][1:] + 1
+        batch_size = int(coors[-1, 0]) + 1
+        x = SparseConvTensor(feas, coors, spatial_shape, batch_size)
+
         x = self.conv0(x)
         x = replace_feature(x, self.relu(x.features))
 
@@ -88,8 +92,8 @@ class SscHead(BaseModule):
     def __init__(
         self,
         in_channels: int = 16,
-        mid_channels: int = 32,
         num_classes: int = 20,
+        voxel_net: ConfigType = None,
         loss_focal: ConfigType = None,
         loss_ce: ConfigType = None,
         loss_lovasz: ConfigType = None,
@@ -102,12 +106,15 @@ class SscHead(BaseModule):
         self.ignore_index = ignore_index
         self.free_index = free_index
 
-        self.sc_class = SegmentationHead(
-            inplanes=in_channels,
-            planes=mid_channels,
-            nbr_classes=num_classes,
-            dilations_conv_list=[1, 2, 3],
-        )
+        if voxel_net is not None:
+            self.voxel_net = MODELS.build(voxel_net)
+        else:
+            self.voxel_net = SegmentationHead(
+                inplanes=in_channels,
+                planes=32,
+                nbr_classes=num_classes,
+                dilations_conv_list=[1, 2, 3],
+            )
 
         if loss_focal is not None:
             self.loss_focal = MODELS.build(loss_focal)
@@ -117,7 +124,7 @@ class SscHead(BaseModule):
             self.loss_lovasz = MODELS.build(loss_lovasz)
 
     def forward(self, x: SparseConvTensor) -> Tensor:
-        return self.sc_class(x)
+        return self.voxel_net(x.features, x.indices)
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
         """Concat voxel-wise Groud Truth."""

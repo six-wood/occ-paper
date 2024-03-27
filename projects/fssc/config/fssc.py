@@ -1,5 +1,4 @@
 from mmengine.config import read_base
-from mmengine.model import MMDistributedDataParallel
 from mmengine.visualization.vis_backend import WandbVisBackend, LocalVisBackend
 from mmdet3d.visualization import Det3DLocalVisualizer
 
@@ -24,10 +23,11 @@ default_hooks.update(
 # val_dataloader.update(batch_size=4)
 # train_dataloader.update(dataset=dict(indices=2))
 # val_dataloader.update(dataset=dict(indices=2))
+# model_wrapper_cfg = dict(type="MMDistributedDataParallel", detect_anomalous_params=True)
 
 vis_backends = [
     dict(type=LocalVisBackend),
-    dict(type=WandbVisBackend, init_kwargs=dict(project="bev-top8K", name="32encoder-add8ecaaspp-1/4")),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="bev-top8K", name="atten-16encoder-add8ecaaspp-1/4")),
 ]
 
 visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
