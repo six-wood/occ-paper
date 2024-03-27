@@ -92,7 +92,7 @@ class PtsNet(BaseModule):
                     encoder_layer.append(residual_block(encoder_channels[i + 1], encoder_channels[i + 1], indice_key=f"subm{i+1}"))
             self.encoder.append(nn.Sequential(*encoder_layer))
 
-    def forward(self, feas: Tensor, coors: Tensor) -> Tensor:
+    def forward(self, feas: Tensor, num_points: Tensor, coors: Tensor) -> Tensor:
         """Forward function.
 
         Args:
@@ -104,7 +104,7 @@ class PtsNet(BaseModule):
             Tensor: Backbone features.
         """
 
-        voxel_features, coors = self.pts_voxel_encoder(feas, coors)
+        voxel_features = self.pts_voxel_encoder(feas, num_points, coors)
 
         spatial_shape = coors.max(0)[0][1:] + 1
         batch_size = int(coors[-1, 0]) + 1

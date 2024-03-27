@@ -52,7 +52,7 @@ from torch.optim.adamw import AdamW
 # optimizer
 lr = 1e-3  # max learning rate
 optim_wrapper = dict(
-    type=OptimWrapper,
+    type=AmpOptimWrapper,
     optimizer=dict(type=AdamW, lr=lr, weight_decay=0.01),
     clip_grad=dict(max_norm=35, norm_type=2),
 )

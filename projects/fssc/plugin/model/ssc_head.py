@@ -91,7 +91,7 @@ class SscHead(BaseModule):
 
     def __init__(
         self,
-        in_channels: int = 16,
+        out_channels: int = 96,
         num_classes: int = 20,
         voxel_net: ConfigType = None,
         loss_focal: ConfigType = None,
@@ -106,15 +106,10 @@ class SscHead(BaseModule):
         self.ignore_index = ignore_index
         self.free_index = free_index
 
+        self.class_seg = nn.Linear(out_channels, num_classes)
+
         if voxel_net is not None:
             self.voxel_net = MODELS.build(voxel_net)
-        else:
-            self.voxel_net = SegmentationHead(
-                inplanes=in_channels,
-                planes=32,
-                nbr_classes=num_classes,
-                dilations_conv_list=[1, 2, 3],
-            )
 
         if loss_focal is not None:
             self.loss_focal = MODELS.build(loss_focal)
@@ -124,7 +119,9 @@ class SscHead(BaseModule):
             self.loss_lovasz = MODELS.build(loss_lovasz)
 
     def forward(self, x: SparseConvTensor) -> Tensor:
-        return self.voxel_net(x.features, x.indices)
+        fea = self.voxel_net(x.features, x.indices)
+        logits = self.class_seg(fea)
+        return logits
 
     def _stack_batch_gt(self, batch_data_samples: SampleList) -> Tensor:
         """Concat voxel-wise Groud Truth."""

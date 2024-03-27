@@ -38,21 +38,19 @@ class SscNet(MVXTwoStageDetector):
 
         if sc_head is not None:
             self.sc_head = MODELS.build(sc_head)
-            
 
         if neck is not None:
             self.neck = MODELS.build(neck)
-            
+
         if ssc_head is not None:
             self.ssc_head = MODELS.build(ssc_head)
 
         if pts_backbone is not None:
             self.pts_backbone = MODELS.build(pts_backbone)
-            
+
         self.with_aux_head = True if aux_head is not None else False
         if aux_head is not None:
             self.aux_head = MODELS.build(aux_head)
-
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
@@ -88,7 +86,7 @@ class SscNet(MVXTwoStageDetector):
     ) -> Sequence[Tensor]:
         # feas, coors = self.pts_voxel_encoder(voxel_dict["voxels"], voxel_dict["coors"])
         # feas = self.pts_middle_encoder(feas, coors)
-        feas, coors = self.pts_backbone(voxel_dict["voxels"], voxel_dict["coors"])
+        feas, coors = self.pts_backbone(voxel_dict["voxels"], voxel_dict["num_points"], voxel_dict["coors"])
         return feas, coors
 
     def loss(self, batch_inputs_dict: dict, batch_data_samples: SampleList) -> Dict[str, Tensor]:
