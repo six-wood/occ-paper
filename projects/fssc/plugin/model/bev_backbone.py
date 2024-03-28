@@ -63,7 +63,7 @@ class group_eca_layer(nn.Module):
         y = self.conv(y.view(B, C, -1).transpose(-1, -2)).transpose(-1, -2).view(B, C, self.groups, self.groups)
 
         # up sample the attentions to the original feature map size
-        y = F.interpolate(y, size=(H, W), mode="nearest")
+        y = F.interpolate(y, size=(H, W), mode="bilinear")
 
         # Multi-scale information fusion
         y = self.sigmoid(y)
@@ -143,7 +143,6 @@ class BevNet(BaseModule):
         bev_strides: Sequence[int] = (2, 2, 2),
         bev_dilations: Sequence[int] = (1, 1, 1),
         bev_encoder_out_channels: Sequence[int] = (48, 64, 80),
-        bev_decoder_blocks: Sequence[int] = (1, 1, 1),
         bev_decoder_out_channels: Sequence[int] = (64, 48, 32),
         conv_cfg: OptConfigType = None,
         norm_cfg: ConfigType = dict(type="BN"),

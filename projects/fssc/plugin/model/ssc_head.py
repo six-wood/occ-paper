@@ -139,9 +139,8 @@ class SscHead(BaseModule):
         """
 
         ssc_label = self._stack_batch_gt(batch_data_samples).to(geo_logits.device)[coors[:, 0], coors[:, 3], coors[:, 2], coors[:, 1]]
+        ssc_label[ssc_label == self.free_index] = self.ignore_index
         losses = dict()
-        # if hasattr(self, "loss_focal"):
-        #     loss["loss_focal"] = self.loss_focal(seg_logit, seg_label, weight=self.class_weights, ignore_index=self.ignore_index)
         losses["loss_ce"] = self.loss_ce(geo_logits, ssc_label, ignore_index=self.ignore_index)
         losses["loss_lovasz"] = self.loss_lovasz(geo_logits, ssc_label, ignore_index=self.ignore_index)
         return losses

@@ -20,14 +20,18 @@ default_hooks.update(
 
 
 # debug
-train_dataloader.update(batch_size=4)
-val_dataloader.update(batch_size=4)
-train_dataloader.update(dataset=dict(indices=2))
-val_dataloader.update(dataset=dict(indices=2))
+# train_dataloader.update(batch_size=4)
+# val_dataloader.update(batch_size=4)
+# train_dataloader.update(dataset=dict(indices=2))
+# val_dataloader.update(dataset=dict(indices=2))
+# model_wrapper_cfg = dict(type="MMDistributedDataParallel", detect_anomalous_params=True)
 
-# vis_backends = [
-#     dict(type=LocalVisBackend),
-#     dict(type=WandbVisBackend, init_kwargs=dict(project="bev-top8K", name="8group-eca-aspp-alldata")),
-# ]
+# test
+train_cfg.update(max_epochs=3)
 
-# visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")
+vis_backends = [
+    dict(type=LocalVisBackend),
+    dict(type=WandbVisBackend, init_kwargs=dict(project="bev-top8K", name="thres-add-8eca*-aspp")),
+]
+
+visualizer = dict(type=Det3DLocalVisualizer, vis_backends=vis_backends, name="visualizer")

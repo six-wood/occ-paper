@@ -28,7 +28,7 @@ class ScEmbeddingLearned(nn.Module):
 
 
 @MODELS.register_module()
-class SampleNet(BaseModule):
+class DualNet(BaseModule):
     def __init__(
         self,
         top_k_scatter: int = 8,
@@ -44,7 +44,7 @@ class SampleNet(BaseModule):
         self.offset = torch.tensor(pc_range[:3])
         self.sc_embedding = ScEmbeddingLearned(4, sc_embedding_dim)
 
-    def forward(self, geo_probs: Tensor, bev_fea: Tensor, pts_feats: Tensor, pts_coors: Tensor) -> SparseConvTensor:
+    def forward(self, geo_probs: Tensor, bev_fea: Tensor, pts_fea: Tensor, pts_coors: Tensor) -> SparseConvTensor:
         B, _, H, W, D = geo_probs.shape
         K = H * W * self.top_k_scatter
         device = geo_probs.device
@@ -54,6 +54,8 @@ class SampleNet(BaseModule):
         # semantic feature
         sc_prob = geo_probs[:, 1].view(B, -1)  # B, H, W, D -> B, H*W*D
         _, sc_topk = torch.topk(sc_prob, dim=1, k=K, largest=True)  # rank in the range of 0 to H*W*Z
+        # sc_topk = torch
+        # sc_topk = sc_topk & (sc_prob > 0.5)
 
         bev_fea = bev_fea.permute(0, 2, 3, 1).contiguous().view(B, -1)
         batch_indices = torch.arange(B, device=device).unsqueeze(1).expand(-1, K)
@@ -65,6 +67,7 @@ class SampleNet(BaseModule):
 
         batch_indices = torch.arange(B, device=device).unsqueeze(1).expand(-1, sc_coors.shape[1]).unsqueeze(2)
         sc_coors = torch.cat([batch_indices, sc_coors], dim=2).to(torch.int32).view(-1, 4)
+        print(sc_coors.shape)
 
         # swap x, z
         sc_copy = sc_coors.clone()
@@ -75,7 +78,7 @@ class SampleNet(BaseModule):
         batch_size = int(sc_coors[-1, 0]) + 1
         sc_embeding = self.sc_embedding(sc_points)
         bev_fea = SparseConvTensor(sc_embeding, sc_coors, spatial_shape, batch_size)
-        pts_fea = SparseConvTensor(pts_feats, pts_coors, spatial_shape, batch_size)
+        pts_fea = SparseConvTensor(pts_fea, pts_coors, spatial_shape, batch_size)
 
         x = sparse_add_hash_based(bev_fea, pts_fea)
 

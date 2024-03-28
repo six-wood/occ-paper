@@ -1,12 +1,14 @@
 import torch.nn as nn
 from projects.fssc.plugin.model.ssc_head import SscHead
 from projects.fssc.plugin.model.sc_head import ScHead
-from projects.fssc.plugin.model.neck import SampleNet
+from projects.fssc.plugin.model.neck import DualNet
 from projects.fssc.plugin.model.ssc_net import SscNet
 from projects.fssc.plugin.model.bev_backbone import BevNet
+from projects.fssc.plugin.model.lovasz_loss import OccLovaszLoss
+from projects.fssc.plugin.model.data_preprocessor import OccDDataPreprocessor
 from mmdet.models.losses.cross_entropy_loss import CrossEntropyLoss
-from mmdet3d.models.data_preprocessors import Det3DDataPreprocessor
-from mmdet3d.models.losses import LovaszLoss
+from mmdet.models.losses.focal_loss import FocalLoss
+from mmdet3d.models.voxel_encoders import DynamicVFE
 
 from mmengine.config import read_base
 
@@ -16,7 +18,7 @@ with read_base():
 model = dict(
     type=SscNet,
     data_preprocessor=dict(
-        type=Det3DDataPreprocessor,
+        type=OccDDataPreprocessor,
         voxel=True,
         voxel_type="dynamic",
         voxel_layer=dict(
@@ -27,9 +29,9 @@ model = dict(
         ),
     ),
     pts_voxel_encoder=dict(
-        type="DynamicVFE",
+        type=DynamicVFE,
         in_channels=4,
-        feat_channels=[sc_embedding_dim],
+        feat_channels=[base_embeding_dim],
         voxel_size=voxel_size,
         point_cloud_range=point_cloud_range,
         with_distance=False,
@@ -45,7 +47,6 @@ model = dict(
         bev_strides=(2, 2, 2),
         bev_dilations=(1, 1, 1),
         bev_encoder_out_channels=(48, 64, 80),
-        bev_decoder_blocks=(1, 1, 1),
         bev_decoder_out_channels=(64, 48, 32),
     ),
     sc_head=dict(
@@ -59,15 +60,15 @@ model = dict(
         ),
     ),
     neck=dict(
-        type=SampleNet,
+        type=DualNet,
         top_k_scatter=k_scatter,
-        sc_embedding_dim=sc_embedding_dim,
+        sc_embedding_dim=base_embeding_dim,
         voxel_size=voxel_size,
         pc_range=point_cloud_range,
     ),
     ssc_head=dict(
         type=SscHead,
-        in_channels=sc_embedding_dim,
+        in_channels=base_embeding_dim,
         mid_channels=32,
         num_classes=num_classes,
         loss_ce=dict(
@@ -78,7 +79,7 @@ model = dict(
             avg_non_ignore=True,
         ),
         loss_lovasz=dict(
-            type=LovaszLoss,
+            type=OccLovaszLoss,
             class_weight=semantickitti_class_weight,
             loss_weight=1.0,
             reduction="none",

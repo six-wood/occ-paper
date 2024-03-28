@@ -176,7 +176,7 @@ def main(config):
                 # np.save(label_filename, LABEL_ds)
                 # print("wrote to", label_filename)
                 LABEL_ds = LABEL
-                LABEL_ds = label_rectification(grid_ind, LABEL_ds, PC_INSTANCE)
+                # LABEL_ds = label_rectification(grid_ind, LABEL_ds, PC_INSTANCE)
 
                 # if sequence != "08":
                 #     MYVALID = compute_valid_mask(LABEL_ds, grid_center, 0, 255)
